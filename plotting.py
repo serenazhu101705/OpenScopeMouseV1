@@ -1,18 +1,19 @@
 """
 Plotting module for visualizing analysis results.
 Includes summary figures, distributions, and receptive field examples.
-Supports both per-mouse and combined plotting.
+Functions extracted from preferred_metrics_new.ipynb
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
+from scipy.optimize import curve_fit
 
 
-def plot_metric_distributions(df, output_dir):
+def plot_metric_distributions(df, units_data, output_dir, probe_name=None):
     """
-    Create distribution plots for each mouse individually AND combined.
+    Create distribution plots for OSI, DSI, and preferred metrics.
     
     Parameters:
     -----------
@@ -20,52 +21,281 @@ def plot_metric_distributions(df, output_dir):
         Results dataframe with columns: mouse_name, osi, dsi, pref_ori, pref_tf, pref_sf
     output_dir : Path
         Output directory
+    probe_name : str, optional
+        Probe name for labeling
     """
-    # Get list of unique mice
-    mice = sorted(df['mouse_name'].unique())
+    output_dir = Path(output_dir)
     
-    # Plot for each individual mouse
-    for mouse in mice:
-        mouse_df = df[df['mouse_name'] == mouse]
-        
-        # Create subdirectory for this mouse
-        mouse_dir = output_dir / mouse
-        mouse_dir.mkdir(exist_ok=True)
-        
-        # Plot all metrics for this mouse
-        _plot_osi(mouse_df, mouse_dir, mouse_name=mouse)
-        _plot_dsi(mouse_df, mouse_dir, mouse_name=mouse)
-        _plot_pref_ori(mouse_df, mouse_dir, mouse_name=mouse)
-        _plot_pref_tf(mouse_df, mouse_dir, mouse_name=mouse)
-        _plot_pref_sf(mouse_df, mouse_dir, mouse_name=mouse)
+    # Get mouse name if only one mouse
+    mouse_name = df['mouse_name'].unique()[0] if df['mouse_name'].nunique() == 1 else None
     
-    # Plot combined across all mice
-    _plot_osi(df, output_dir, mouse_name='Combined')
-    _plot_dsi(df, output_dir, mouse_name='Combined')
-    _plot_pref_ori(df, output_dir, mouse_name='Combined')
-    _plot_pref_tf(df, output_dir, mouse_name='Combined')
-    _plot_pref_sf(df, output_dir, mouse_name='Combined')
+    # Plot OSI distribution
+    plot_orientation_selectivity(
+        df, 
+        n_hist_bins=20, 
+        peak_dff_min=1.0,
+        save_path=output_dir / 'osi_distribution.png',
+        probe_name=probe_name,
+        mouse_name=mouse_name
+    )
+    
+    # Plot DSI distribution
+    plot_direction_selectivity(
+        df,
+        n_hist_bins=20,
+        peak_dff_min=1.0,
+        save_path=output_dir / 'dsi_distribution.png',
+        probe_name=probe_name,
+        mouse_name=mouse_name
+    )
+    
+    # Plot preferred orientation (bar chart)
+    plot_preferred_orientation_bar(
+        df,
+        peak_dff_min=1.0,
+        save_path=output_dir / 'pref_ori_distribution.png',
+        probe_name=probe_name,
+        mouse_name=mouse_name
+    )
+    
+    # Plot preferred temporal frequency (bar chart)
+    plot_preferred_tf_bar(
+        df,
+        peak_dff_min=1.0,
+        save_path=output_dir / 'pref_tf_distribution.png',
+        probe_name=probe_name,
+        mouse_name=mouse_name
+    )
+    
+    # Plot preferred spatial frequency (bar chart)
+    plot_preferred_sf_bar(
+        df,
+        peak_dff_min=1.0,
+        save_path=output_dir / 'pref_sf_distribution.png',
+        probe_name=probe_name,
+        mouse_name=mouse_name
+    )
 
 
-def _plot_osi(df, output_dir, mouse_name=None):
-    """Plot OSI distribution."""
-    fig, ax = plt.subplots(figsize=(8, 6))
-    osis = df['osi'].dropna().values
+def plot_summary_figures(df, units_data, output_dir, probe_name=None):
+    """
+    Create summary scatter plots of preferred metrics vs RF position.
     
-    if len(osis) == 0:
-        plt.close()
+    Parameters:
+    -----------
+    df : DataFrame
+        Results dataframe
+    units_data : dict
+        Dictionary containing 'unit_rfs' or 'filtered_rfs'
+    output_dir : Path
+        Output directory
+    probe_name : str, optional
+        Probe name for labeling
+    """
+    output_dir = Path(output_dir)
+    
+    # Get mouse name if only one mouse
+    mouse_name = df['mouse_name'].unique()[0] if df['mouse_name'].nunique() == 1 else None
+    
+    # Get the RFs from units_data
+    # Try to get filtered RFs first, otherwise use unit_rfs
+    if 'unit_rfs' in units_data:
+        filtered_rfs = units_data['unit_rfs']
+    else:
+        filtered_rfs = None
+
+    plot_avg_rf(
+        df,
+        filtered_rfs,
+        save_path=output_dir / 'average_rf.png',
+        probe_name=probe_name,
+        mouse_name=mouse_name
+    )
+    
+    # Check if we have RF center data
+    if 'rf_x_center' in df.columns and 'rf_y_center' in df.columns:
+        # Plot RF centers colored by preferred orientation
+        plot_preferred_orientation_by_rf_from_csv(
+            df,
+            filtered_rfs,
+            save_path=output_dir / 'rf_centers_by_preferred_orientation.png',
+            probe_name=probe_name,
+            mouse_name=mouse_name
+        )
+        
+        # Plot RF centers colored by preferred temporal frequency
+        plot_preferred_tf_by_rf_from_csv(
+            df,
+            filtered_rfs,
+            save_path=output_dir / 'rf_centers_by_preferred_tf.png',
+            probe_name=probe_name,
+            mouse_name=mouse_name
+        )
+        
+        # Plot RF centers colored by preferred spatial frequency
+        plot_preferred_sf_by_rf_from_csv(
+            df,
+            filtered_rfs,
+            save_path=output_dir / 'rf_centers_by_preferred_sf.png',
+            probe_name=probe_name,
+            mouse_name=mouse_name
+        )
+        
+        # Plot RF position vs preferred orientation
+        plot_rf_position_vs_pref_ori_from_csv(
+            df,
+            save_path_x=output_dir / 'rf_x_position_vs_pref_ori.png',
+            save_path_y=output_dir / 'rf_y_position_vs_pref_ori.png',
+            probe_name=probe_name,
+            mouse_name=mouse_name
+        )
+        
+        # Plot RF position vs preferred temporal frequency
+        plot_rf_position_vs_pref_tf_from_csv(
+            df,
+            save_path_x=output_dir / 'rf_x_position_vs_pref_tf.png',
+            save_path_y=output_dir / 'rf_y_position_vs_pref_tf.png',
+            probe_name=probe_name,
+            mouse_name=mouse_name
+        )
+        
+        # Plot RF position vs preferred spatial frequency
+        plot_rf_position_vs_pref_sf_from_csv(
+            df,
+            save_path_x=output_dir / 'rf_x_position_vs_pref_sf.png',
+            save_path_y=output_dir / 'rf_y_position_vs_pref_sf.png',
+            probe_name=probe_name,
+            mouse_name=mouse_name
+        )
+
+# ============================================================================
+# Core plotting functions from preferred_metrics_new.ipynb
+# ============================================================================
+
+def plot_avg_rf(df, 
+                filtered_rfs, 
+                save_path=None, 
+                probe_name=None, 
+                mouse_name=None):
+    """
+    Plot the average receptive field.
+    
+    Parameters:
+    -----------
+    df : DataFrame
+        Results dataframe with RF center positions
+    filtered_rfs : list or array
+        List of receptive field arrays (2D) for each unit
+    save_path : str or Path, optional
+        Path to save figure
+    probe_name : str, optional
+        Probe name for title
+    mouse_name : str, optional
+        Mouse name for title
+    """
+    # Filter out rows without RF center data
+    df = df.dropna(subset=['rf_x_center', 'rf_y_center'])
+    
+    if len(df) == 0:
+        print("No valid RF center data found")
         return
     
-    ax.hist(osis, bins=20, edgecolor='black', alpha=0.7, color='steelblue')
-    ax.set_xlabel('Orientation Selectivity Index (OSI)', fontsize=12)
-    ax.set_ylabel('Number of Cells', fontsize=12)
+    if filtered_rfs is None or len(filtered_rfs) == 0:
+        print("No RFs available to plot")
+        return
     
-    title = f'Orientation Selectivity Distribution\n({len(osis)} cells)'
-    if mouse_name:
+    x_positions = df['rf_x_center'].values
+    y_positions = df['rf_y_center'].values
+    
+    # Create plot
+    fig, ax = plt.subplots(figsize=(12, 10))
+    
+    # Calculate and plot average RF
+    average_rf = np.mean(filtered_rfs, axis=0)
+    
+    # Get RF extent from positions
+    x_min, x_max = x_positions.min(), x_positions.max()
+    y_min, y_max = y_positions.min(), y_positions.max()
+    
+    # Add padding
+    x_padding = (x_max - x_min) * 0.1
+    y_padding = (y_max - y_min) * 0.1
+    
+    im = ax.imshow(average_rf, origin="lower", cmap='viridis', alpha=0.8, 
+                   extent=[x_min - x_padding, x_max + x_padding, 
+                           y_min - y_padding, y_max + y_padding],
+                   aspect='auto')
+    
+    plt.colorbar(im, ax=ax, label='Average Response')
+    
+    ax.set_xlabel('RF Center X Position (degrees)', fontsize=14)
+    ax.set_ylabel('RF Center Y Position (degrees)', fontsize=14)
+    
+    # Create title
+    title = f'Average Receptive Field\n({len(filtered_rfs)} cells)'
+    if mouse_name and probe_name:
+        title = f'{mouse_name} - {probe_name}\n' + title
+    elif probe_name:
+        title = f'{probe_name}\n' + title
+    elif mouse_name:
         title = f'{mouse_name}\n' + title
+    
+    ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+    ax.set_aspect('equal')
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    
+    plt.close()
+
+def plot_orientation_selectivity(peak_df, 
+                                 si_range=(0, 1),
+                                 n_hist_bins=20,
+                                 peak_dff_min=1.0,
+                                 save_path=None,
+                                 density=False,
+                                 probe_name=None,
+                                 mouse_name=None):
+    """
+    Plot orientation selectivity histogram.
+    """
+    # Filter responsive cells
+    vis_cells = (peak_df.peak_dff_dg > peak_dff_min)
+    
+    # Filter orientation selective cells
+    osi_cells = vis_cells & (peak_df.osi_dg > si_range[0]) & (peak_df.osi_dg < si_range[1])
+    
+    peak_osi = peak_df.loc[osi_cells]
+    osis = peak_osi.osi_dg.values
+    
+    if len(osis) == 0:
+        print("No cells passed OSI filter")
+        return
+    
+    # Plot histogram
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    ax.hist(osis, bins=n_hist_bins, edgecolor='black', alpha=0.7, 
+            cumulative=False, density=density, color='steelblue')
+    ax.set_xlabel('Orientation Selectivity Index (OSI)', fontsize=12)
+    ylabel = 'Number of Cells (Normalized)' if density else 'Number of Cells'
+    ax.set_ylabel(ylabel, fontsize=12)
+    
+    # Create title with probe and mouse info
+    title = f'Orientation Selectivity Distribution\n({len(osis)} cells)'
+    if mouse_name and probe_name:
+        title = f'{mouse_name} - {probe_name}\n' + title
+    elif probe_name:
+        title = f'{probe_name}\n' + title
+    elif mouse_name:
+        title = f'{mouse_name}\n' + title
+    
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='y')
     
+    # Add stats text
     stats_text = f'Mean: {np.mean(osis):.3f}\nMedian: {np.median(osis):.3f}'
     ax.text(0.95, 0.95, stats_text, transform=ax.transAxes,
             verticalalignment='top', horizontalalignment='right',
@@ -74,30 +304,59 @@ def _plot_osi(df, output_dir, mouse_name=None):
     
     plt.tight_layout()
     
-    filename = 'combined_osi_distribution.png' if mouse_name == 'Combined' else 'osi_distribution.png'
-    plt.savefig(output_dir / filename, dpi=300, bbox_inches='tight')
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved OSI figure to: {save_path}")
+    
     plt.close()
 
 
-def _plot_dsi(df, output_dir, mouse_name=None):
-    """Plot DSI distribution."""
-    fig, ax = plt.subplots(figsize=(8, 6))
-    dsis = df['dsi'].dropna().values
+def plot_direction_selectivity(peak_df, 
+                               si_range=(0, 1),
+                               n_hist_bins=20,
+                               peak_dff_min=1.0,
+                               save_path=None,
+                               density=False,
+                               probe_name=None,
+                               mouse_name=None):
+    """
+    Plot direction selectivity index (DSI) histogram.
+    """
+    # Filter responsive cells
+    vis_cells = (peak_df.peak_dff_dg > peak_dff_min)
+    
+    # Filter direction selective cells
+    dsi_cells = vis_cells & (peak_df.dsi_dg > si_range[0]) & (peak_df.dsi_dg < si_range[1])
+    
+    peak_dsi = peak_df.loc[dsi_cells]
+    dsis = peak_dsi.dsi_dg.values
     
     if len(dsis) == 0:
-        plt.close()
+        print("No cells passed DSI filter")
         return
     
-    ax.hist(dsis, bins=20, edgecolor='black', alpha=0.7, color='green')
+    # Plot histogram
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    ax.hist(dsis, bins=n_hist_bins, edgecolor='black', alpha=0.7, 
+            cumulative=False, density=density, color='green')
     ax.set_xlabel('Direction Selectivity Index (DSI)', fontsize=12)
-    ax.set_ylabel('Number of Cells', fontsize=12)
+    ylabel = 'Number of Cells (Normalized)' if density else 'Number of Cells'
+    ax.set_ylabel(ylabel, fontsize=12)
     
+    # Create title with probe and mouse info
     title = f'Direction Selectivity Distribution\n({len(dsis)} cells)'
-    if mouse_name:
+    if mouse_name and probe_name:
+        title = f'{mouse_name} - {probe_name}\n' + title
+    elif probe_name:
+        title = f'{probe_name}\n' + title
+    elif mouse_name:
         title = f'{mouse_name}\n' + title
+    
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='y')
     
+    # Add stats text
     stats_text = f'Mean: {np.mean(dsis):.3f}\nMedian: {np.median(dsis):.3f}'
     ax.text(0.95, 0.95, stats_text, transform=ax.transAxes,
             verticalalignment='top', horizontalalignment='right',
@@ -106,31 +365,64 @@ def _plot_dsi(df, output_dir, mouse_name=None):
     
     plt.tight_layout()
     
-    filename = 'combined_dsi_distribution.png' if mouse_name == 'Combined' else 'dsi_distribution.png'
-    plt.savefig(output_dir / filename, dpi=300, bbox_inches='tight')
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved DSI figure to: {save_path}")
+    
     plt.close()
 
 
-def _plot_pref_ori(df, output_dir, mouse_name=None):
-    """Plot preferred orientation distribution."""
-    fig, ax = plt.subplots(figsize=(10, 6))
-    pref_oris = df['pref_ori'].dropna().values
+def plot_preferred_orientation_bar(peak_df, 
+                               peak_dff_min=1.0,
+                               save_path=None,
+                               color='mediumorchid',
+                               probe_name=None,
+                               mouse_name=None,
+                               normalize=False):
+    """
+    Plot preferred orientation as a bar histogram.
+    
+    Parameters
+    ----------
+    normalize : bool, default=False
+        If True, normalize counts to proportions (0-1) or percentages (0-100)
+    """
+    # Filter responsive cells
+    vis_cells = (peak_df.peak_dff_dg > peak_dff_min)
+    pref_oris = peak_df.loc[vis_cells].pref_ori.dropna().values
     
     if len(pref_oris) == 0:
-        plt.close()
+        print("No cells with preferred orientation data")
         return
     
+    # Get unique orientations and their counts
     unique_oris = np.sort(np.unique(pref_oris))
     counts = np.array([np.sum(pref_oris == ori) for ori in unique_oris])
     
-    ax.bar(unique_oris, counts, width=np.diff(unique_oris).min() * 0.8 if len(unique_oris) > 1 else 1.0,
-           color='mediumorchid', edgecolor='black', alpha=0.7, linewidth=1.5)
-    ax.set_xlabel('Orientation (degrees)', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Number of Cells', fontsize=12, fontweight='bold')
+    # Normalize if requested
+    if normalize:
+        counts = counts / len(pref_oris) * 100  # Convert to percentage
     
+    # Plot bar chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    bars = ax.bar(unique_oris, counts, 
+                  width=np.diff(unique_oris).min() * 0.8 if len(unique_oris) > 1 else 1.0,
+                  color=color, edgecolor='black', alpha=0.7, linewidth=1.5)
+    
+    ax.set_xlabel('Orientation (degrees)', fontsize=12, fontweight='bold')
+    ylabel = 'Number of Cells (%)' if normalize else 'Number of Cells'
+    ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
+    
+    # Create title with probe and mouse info
     title = f'Preferred Orientation Distribution\n({len(pref_oris)} cells)'
-    if mouse_name:
+    if mouse_name and probe_name:
+        title = f'{mouse_name} - {probe_name}\n' + title
+    elif probe_name:
+        title = f'{probe_name}\n' + title
+    elif mouse_name:
         title = f'{mouse_name}\n' + title
+    
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_xticks(unique_oris)
     ax.set_xticklabels([f'{int(ori)}' for ori in unique_oris])
@@ -138,32 +430,59 @@ def _plot_pref_ori(df, output_dir, mouse_name=None):
     
     plt.tight_layout()
     
-    filename = 'combined_pref_ori_distribution.png' if mouse_name == 'Combined' else 'pref_ori_distribution.png'
-    plt.savefig(output_dir / filename, dpi=300, bbox_inches='tight')
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved preferred orientation figure to: {save_path}")
+    
     plt.close()
 
 
-def _plot_pref_tf(df, output_dir, mouse_name=None):
-    """Plot preferred temporal frequency distribution."""
-    fig, ax = plt.subplots(figsize=(10, 6))
-    pref_tfs = df['pref_tf'].dropna().values
+def plot_preferred_tf_bar(peak_df, 
+                          peak_dff_min=1.0,
+                          save_path=None,
+                          color='darkorange',
+                          probe_name=None,
+                          mouse_name=None,
+                          normalize=False):
+    """
+    Plot preferred temporal frequency as a bar histogram.
+    """
+    # Filter responsive cells
+    vis_cells = (peak_df.peak_dff_dg > peak_dff_min)
+    pref_tfs = peak_df.loc[vis_cells].pref_tf.dropna().values
     
     if len(pref_tfs) == 0:
-        plt.close()
+        print("No cells with preferred temporal frequency data")
         return
     
+    # Get unique TFs and their counts
     unique_tfs = np.sort(np.unique(pref_tfs))
     counts = np.array([np.sum(pref_tfs == tf) for tf in unique_tfs])
     
-    x_positions = np.arange(len(unique_tfs))
-    ax.bar(x_positions, counts, width=0.8,
-           color='darkorange', edgecolor='black', alpha=0.7, linewidth=1.5)
-    ax.set_xlabel('Temporal Frequency (Hz)', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Number of Cells', fontsize=12, fontweight='bold')
+    # Normalize if requested
+    if normalize:
+        counts = counts / len(pref_tfs) * 100
     
+    # Plot bar chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    x_positions = np.arange(len(unique_tfs))
+    bars = ax.bar(x_positions, counts, width=0.8,
+                  color=color, edgecolor='black', alpha=0.7, linewidth=1.5)
+    
+    ax.set_xlabel('Temporal Frequency (Hz)', fontsize=12, fontweight='bold')
+    ylabel = 'Number of Cells (%)' if normalize else 'Number of Cells'
+    ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
+    
+    # Create title with probe and mouse info
     title = f'Preferred Temporal Frequency Distribution\n({len(pref_tfs)} cells)'
-    if mouse_name:
+    if mouse_name and probe_name:
+        title = f'{mouse_name} - {probe_name}\n' + title
+    elif probe_name:
+        title = f'{probe_name}\n' + title
+    elif mouse_name:
         title = f'{mouse_name}\n' + title
+    
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_xticks(x_positions)
     ax.set_xticklabels([f'{tf:.1f}' for tf in unique_tfs])
@@ -171,32 +490,59 @@ def _plot_pref_tf(df, output_dir, mouse_name=None):
     
     plt.tight_layout()
     
-    filename = 'combined_pref_tf_distribution.png' if mouse_name == 'Combined' else 'pref_tf_distribution.png'
-    plt.savefig(output_dir / filename, dpi=300, bbox_inches='tight')
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved preferred TF figure to: {save_path}")
+    
     plt.close()
 
 
-def _plot_pref_sf(df, output_dir, mouse_name=None):
-    """Plot preferred spatial frequency distribution."""
-    fig, ax = plt.subplots(figsize=(10, 6))
-    pref_sfs = df['pref_sf'].dropna().values
+def plot_preferred_sf_bar(peak_df, 
+                          peak_dff_min=1.0,
+                          save_path=None,
+                          color='orangered',
+                          probe_name=None,
+                          mouse_name=None,
+                          normalize=False):
+    """
+    Plot preferred spatial frequency as a bar histogram.
+    """
+    # Filter responsive cells
+    vis_cells = (peak_df.peak_dff_dg > peak_dff_min)
+    pref_sfs = peak_df.loc[vis_cells].pref_sf.dropna().values
     
     if len(pref_sfs) == 0:
-        plt.close()
+        print("No cells with preferred spatial frequency data")
         return
     
+    # Get unique SFs and their counts
     unique_sfs = np.sort(np.unique(pref_sfs))
     counts = np.array([np.sum(pref_sfs == sf) for sf in unique_sfs])
     
-    x_positions = np.arange(len(unique_sfs))
-    ax.bar(x_positions, counts, width=0.8,
-           color='orangered', edgecolor='black', alpha=0.7, linewidth=1.5)
-    ax.set_xlabel('Spatial Frequency (cpd)', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Number of Cells', fontsize=12, fontweight='bold')
+    # Normalize if requested
+    if normalize:
+        counts = counts / len(pref_sfs) * 100
     
+    # Plot bar chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    x_positions = np.arange(len(unique_sfs))
+    bars = ax.bar(x_positions, counts, width=0.8,
+                  color=color, edgecolor='black', alpha=0.7, linewidth=1.5)
+    
+    ax.set_xlabel('Spatial Frequency (cpd)', fontsize=12, fontweight='bold')
+    ylabel = 'Number of Cells (%)' if normalize else 'Number of Cells'
+    ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
+    
+    # Create title with probe and mouse info
     title = f'Preferred Spatial Frequency Distribution\n({len(pref_sfs)} cells)'
-    if mouse_name:
+    if mouse_name and probe_name:
+        title = f'{mouse_name} - {probe_name}\n' + title
+    elif probe_name:
+        title = f'{probe_name}\n' + title
+    elif mouse_name:
         title = f'{mouse_name}\n' + title
+    
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_xticks(x_positions)
     ax.set_xticklabels([f'{sf:.2f}' for sf in unique_sfs])
@@ -204,245 +550,572 @@ def _plot_pref_sf(df, output_dir, mouse_name=None):
     
     plt.tight_layout()
     
-    filename = 'combined_pref_sf_distribution.png' if mouse_name == 'Combined' else 'pref_sf_distribution.png'
-    plt.savefig(output_dir / filename, dpi=300, bbox_inches='tight')
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved preferred SF figure to: {save_path}")
+    
     plt.close()
 
 
-def plot_summary_figures(df, output_dir):
+def plot_preferred_orientation_by_rf_from_csv(combined_df, filtered_rfs, save_path=None,
+                                              probe_name=None, mouse_name=None):
     """
-    Create summary scatter plots of preferred metrics vs RF position.
+    Plot RF centers colored by preferred orientation with average RF background.
+    Uses CSV data with RF centers already computed.
     
     Parameters:
     -----------
-    df : DataFrame
-        Results dataframe
-    output_dir : Path
-        Output directory
+    combined_df : DataFrame
+        Results dataframe with RF center positions
+    filtered_rfs : list or array
+        List of receptive field arrays (2D) for each unit
+    save_path : str or Path, optional
+        Path to save figure
+    probe_name : str, optional
+        Probe name for title
+    mouse_name : str, optional
+        Mouse name for title
     """
-    metrics = ['pref_ori', 'pref_tf', 'pref_sf', 'osi', 'dsi']
-    metric_labels = {
-        'pref_ori': 'Preferred Orientation (deg)',
-        'pref_tf': 'Preferred Temporal Frequency (Hz)',
-        'pref_sf': 'Preferred Spatial Frequency (cpd)',
-        'osi': 'Orientation Selectivity Index',
-        'dsi': 'Direction Selectivity Index'
-    }
+    # Filter out rows without RF center data
+    df = combined_df.dropna(subset=['rf_x_center', 'rf_y_center'])
     
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-    axes = axes.flatten()
-    
-    for idx, metric in enumerate(metrics):
-        ax = axes[idx]
-        
-        # Scatter plot colored by metric value
-        scatter = ax.scatter(
-            df['rf_x_center'],
-            df['rf_y_center'],
-            c=df[metric],
-            cmap='viridis',
-            alpha=0.6,
-            s=50
-        )
-        
-        ax.set_xlabel('RF X Center', fontsize=12)
-        ax.set_ylabel('RF Y Center', fontsize=12)
-        ax.set_title(f'RF Position vs {metric_labels[metric]}', fontsize=14, fontweight='bold')
-        ax.grid(True, alpha=0.3)
-        
-        # Add colorbar
-        plt.colorbar(scatter, ax=ax, label=metric_labels[metric])
-    
-    # Remove extra subplot
-    fig.delaxes(axes[5])
-    
-    # Add overall title
-    fig.suptitle('Preferred Metrics vs Receptive Field Position', 
-                 fontsize=16, fontweight='bold', y=0.995)
-    
-    plt.tight_layout()
-    plt.savefig(output_dir / 'summary_rf_position_vs_metrics.png', dpi=300, bbox_inches='tight')
-    plt.close()
-
-
-def plot_rf_examples(df, output_dir, n_examples=20):
-    """
-    Plot example receptive fields (requires saved RF data).
-    
-    Parameters:
-    -----------
-    df : DataFrame
-        Results dataframe
-    output_dir : Path
-        Output directory
-    n_examples : int
-        Number of examples to plot
-    """
-    # This is a placeholder - actual implementation would require loading RF data
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.text(0.5, 0.5, 'RF examples would be plotted here\n(requires raw RF data)',
-            ha='center', va='center', fontsize=14)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.axis('off')
-    plt.savefig(output_dir / 'rf_examples.png', dpi=150, bbox_inches='tight')
-    plt.close()
-
-
-def plot_correlation_matrix(df, output_dir):
-    """
-    Plot correlation matrix of metrics.
-    
-    Parameters:
-    -----------
-    df : DataFrame
-        Results dataframe
-    output_dir : Path
-        Output directory
-    """
-    metrics = ['pref_ori', 'pref_tf', 'pref_sf', 'osi', 'dsi', 'rf_x_center', 'rf_y_center']
-    
-    # Select only numeric columns that exist
-    available_metrics = [m for m in metrics if m in df.columns]
-    
-    if len(available_metrics) < 2:
+    if len(df) == 0:
+        print("No valid RF center data found")
         return
     
-    # Calculate correlation matrix
-    corr_matrix = df[available_metrics].corr()
+    x_positions = df['rf_x_center'].values
+    y_positions = df['rf_y_center'].values
+    preferred_oris = df['pref_ori'].values
+    
+    unique_oris = np.unique(preferred_oris)
+    n_orientations = len(unique_oris)
+    
+    # Select color map
+    if n_orientations <= 10:
+        ori_colors = plt.cm.tab10(np.linspace(0, 1, n_orientations))
+    else:
+        ori_colors = plt.cm.tab20(np.linspace(0, 1, n_orientations))
     
     # Create plot
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(12, 10))
     
-    # Create heatmap
-    sns.heatmap(corr_matrix, annot=True, fmt='.2f', cmap='coolwarm', 
-                center=0, square=True, linewidths=1, 
-                cbar_kws={"shrink": 0.8}, ax=ax)
+    # Calculate and plot average RF as background
+    if filtered_rfs is not None and len(filtered_rfs) > 0:
+        average_rf = np.mean(filtered_rfs, axis=0)
+        
+        # Get RF extent from positions
+        x_min, x_max = x_positions.min(), x_positions.max()
+        y_min, y_max = y_positions.min(), y_positions.max()
+        
+        # Add padding
+        x_padding = (x_max - x_min) * 0.1
+        y_padding = (y_max - y_min) * 0.1
+        
+        im = ax.imshow(average_rf, origin="lower", cmap='viridis', alpha=0.4, 
+                       extent=[x_min - x_padding, x_max + x_padding, 
+                               y_min - y_padding, y_max + y_padding],
+                       aspect='auto')
     
-    ax.set_title('Correlation Matrix of Metrics', fontsize=16, fontweight='bold', pad=20)
+    # Plot each orientation with different color
+    for i, ori in enumerate(unique_oris):
+        ori_mask = (preferred_oris == ori)
+        ax.scatter(x_positions[ori_mask], y_positions[ori_mask], 
+                  color=ori_colors[i], label=f'{int(ori)}°', s=100, alpha=0.8,
+                  edgecolors='black', linewidths=1.0)
+    
+    ax.set_xlabel('RF Center X Position (degrees)', fontsize=14)
+    ax.set_ylabel('RF Center Y Position (degrees)', fontsize=14)
+    
+    # Create title
+    title = f'RF Centers Colored by Preferred Orientation\n({len(df)} cells)'
+    if mouse_name and probe_name:
+        title = f'{mouse_name} - {probe_name}\n' + title
+    elif probe_name:
+        title = f'{probe_name}\n' + title
+    elif mouse_name:
+        title = f'{mouse_name}\n' + title
+    
+    ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+    ax.legend(title='Preferred Orientation', bbox_to_anchor=(1.05, 1), 
+              loc='upper left', fontsize=10, title_fontsize=11)
+    ax.grid(True, alpha=0.3)
+    ax.set_aspect('equal')
     
     plt.tight_layout()
-    plt.savefig(output_dir / 'correlation_matrix.png', dpi=300, bbox_inches='tight')
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    
     plt.close()
 
 
-def plot_mouse_comparison(df, output_dir):
+def plot_preferred_tf_by_rf_from_csv(combined_df, filtered_rfs, save_path=None,
+                                     probe_name=None, mouse_name=None):
     """
-    Create comparison plots across mice.
+    Plot RF centers colored by preferred temporal frequency with average RF background.
+    Uses CSV data with RF centers already computed.
     
     Parameters:
     -----------
-    df : DataFrame
-        Results dataframe
-    output_dir : Path
-        Output directory
+    combined_df : DataFrame
+        Results dataframe with RF center positions
+    filtered_rfs : list or array
+        List of receptive field arrays (2D) for each unit
+    save_path : str or Path, optional
+        Path to save figure
+    probe_name : str, optional
+        Probe name for title
+    mouse_name : str, optional
+        Mouse name for title
     """
-    if 'mouse_name' not in df.columns or df['mouse_name'].nunique() < 2:
+    # Filter out rows without RF center data
+    df = combined_df.dropna(subset=['rf_x_center', 'rf_y_center'])
+    
+    if len(df) == 0:
+        print("No valid RF center data found")
         return
     
-    metrics = ['osi', 'dsi', 'pref_ori']
+    x_positions = df['rf_x_center'].values
+    y_positions = df['rf_y_center'].values
+    preferred_tfs = df['pref_tf'].values
     
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    unique_tfs = np.unique(preferred_tfs)
+    n_tfs = len(unique_tfs)
     
-    for idx, metric in enumerate(metrics):
-        ax = axes[idx]
+    # Select color map
+    if n_tfs <= 10:
+        tf_colors = plt.cm.tab10(np.linspace(0, 1, n_tfs))
+    else:
+        tf_colors = plt.cm.tab20(np.linspace(0, 1, n_tfs))
+    
+    # Create plot
+    fig, ax = plt.subplots(figsize=(12, 10))
+    
+    # Calculate and plot average RF as background
+    if filtered_rfs is not None and len(filtered_rfs) > 0:
+        average_rf = np.mean(filtered_rfs, axis=0)
         
-        # Box plot by mouse
-        df.boxplot(column=metric, by='mouse_name', ax=ax)
-        ax.set_xlabel('Mouse', fontsize=12)
-        ax.set_ylabel(metric.upper(), fontsize=12)
-        ax.set_title(f'{metric.upper()} by Mouse', fontsize=14, fontweight='bold')
-        ax.get_figure().suptitle('')  # Remove default title
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        # Get RF extent from positions
+        x_min, x_max = x_positions.min(), x_positions.max()
+        y_min, y_max = y_positions.min(), y_positions.max()
+        
+        # Add padding
+        x_padding = (x_max - x_min) * 0.1
+        y_padding = (y_max - y_min) * 0.1
+        
+        im = ax.imshow(average_rf, origin="lower", cmap='viridis', alpha=0.4, 
+                       extent=[x_min - x_padding, x_max + x_padding, 
+                               y_min - y_padding, y_max + y_padding],
+                       aspect='auto')
+    
+    # Plot each TF with different color
+    for i, tf in enumerate(unique_tfs):
+        tf_mask = (preferred_tfs == tf)
+        ax.scatter(x_positions[tf_mask], y_positions[tf_mask], 
+                  color=tf_colors[i], label=f'{tf:.1f} Hz', s=100, alpha=0.8,
+                  edgecolors='black', linewidths=1.0)
+    
+    ax.set_xlabel('RF Center X Position (degrees)', fontsize=14)
+    ax.set_ylabel('RF Center Y Position (degrees)', fontsize=14)
+    
+    # Create title
+    title = f'RF Centers Colored by Preferred Temporal Frequency\n({len(df)} cells)'
+    if mouse_name and probe_name:
+        title = f'{mouse_name} - {probe_name}\n' + title
+    elif probe_name:
+        title = f'{probe_name}\n' + title
+    elif mouse_name:
+        title = f'{mouse_name}\n' + title
+    
+    ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+    ax.legend(title='Preferred TF', bbox_to_anchor=(1.05, 1), 
+              loc='upper left', fontsize=10, title_fontsize=11)
+    ax.grid(True, alpha=0.3)
+    ax.set_aspect('equal')
     
     plt.tight_layout()
-    plt.savefig(output_dir / 'mouse_comparison.png', dpi=300, bbox_inches='tight')
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    
     plt.close()
 
 
-def create_summary_report(df, output_dir, args):
+def plot_preferred_sf_by_rf_from_csv(combined_df, filtered_rfs, save_path=None,
+                                     probe_name=None, mouse_name=None):
     """
-    Create a text summary report.
+    Plot RF centers colored by preferred spatial frequency with average RF background.
+    Uses CSV data with RF centers already computed.
     
     Parameters:
     -----------
-    df : DataFrame
-        Results dataframe
-    output_dir : Path
-        Output directory
-    args : Namespace
-        Command line arguments
+    combined_df : DataFrame
+        Results dataframe with RF center positions
+    filtered_rfs : list or array
+        List of receptive field arrays (2D) for each unit
+    save_path : str or Path, optional
+        Path to save figure
+    probe_name : str, optional
+        Probe name for title
+    mouse_name : str, optional
+        Mouse name for title
     """
-    report_path = output_dir / 'analysis_summary.txt'
+    # Filter out rows without RF center data
+    df = combined_df.dropna(subset=['rf_x_center', 'rf_y_center'])
     
-    with open(report_path, 'w') as f:
-        f.write("=" * 80 + "\n")
-        f.write("PREFERRED METRICS ANALYSIS SUMMARY\n")
-        f.write("=" * 80 + "\n\n")
+    if len(df) == 0:
+        print("No valid RF center data found")
+        return
+    
+    x_positions = df['rf_x_center'].values
+    y_positions = df['rf_y_center'].values
+    preferred_sfs = df['pref_sf'].values
+    
+    unique_sfs = np.unique(preferred_sfs)
+    n_sfs = len(unique_sfs)
+    
+    # Select color map
+    if n_sfs <= 10:
+        sf_colors = plt.cm.tab10(np.linspace(0, 1, n_sfs))
+    else:
+        sf_colors = plt.cm.tab20(np.linspace(0, 1, n_sfs))
+    
+    # Create plot
+    fig, ax = plt.subplots(figsize=(12, 10))
+    
+    # Calculate and plot average RF as background
+    if filtered_rfs is not None and len(filtered_rfs) > 0:
+        average_rf = np.mean(filtered_rfs, axis=0)
         
-        f.write(f"Analysis Date: {output_dir.name}\n")
-        f.write(f"Probe: {args.probe}\n")
-        f.write(f"Filtering: ")
-        if args.filtered:
-            f.write(f"Gaussian fit (R² >= {args.r2_threshold})\n")
-        elif args.all_units:
-            f.write("All units (no SNR filter)\n")
-        else:
-            f.write("SNR > 1 only\n")
-        f.write("\n")
+        # Get RF extent from positions
+        x_min, x_max = x_positions.min(), x_positions.max()
+        y_min, y_max = y_positions.min(), y_positions.max()
         
-        f.write(f"Total units analyzed: {len(df)}\n")
-        f.write(f"Number of mice: {df['mouse_name'].nunique()}\n")
-        f.write(f"Mice: {', '.join(sorted(df['mouse_name'].unique()))}\n")
-        f.write("\n")
+        # Add padding
+        x_padding = (x_max - x_min) * 0.1
+        y_padding = (y_max - y_min) * 0.1
         
-        f.write("-" * 80 + "\n")
-        f.write("METRIC STATISTICS (COMBINED)\n")
-        f.write("-" * 80 + "\n\n")
-        
-        metrics = ['pref_ori', 'pref_tf', 'pref_sf', 'osi', 'dsi']
-        for metric in metrics:
-            f.write(f"{metric.upper()}:\n")
-            f.write(f"  Mean: {df[metric].mean():.3f}\n")
-            f.write(f"  Median: {df[metric].median():.3f}\n")
-            f.write(f"  Std: {df[metric].std():.3f}\n")
-            f.write(f"  Min: {df[metric].min():.3f}\n")
-            f.write(f"  Max: {df[metric].max():.3f}\n")
-            f.write("\n")
-        
-        # Per-mouse statistics
-        f.write("-" * 80 + "\n")
-        f.write("METRIC STATISTICS (PER MOUSE)\n")
-        f.write("-" * 80 + "\n\n")
-        
-        for mouse in sorted(df['mouse_name'].unique()):
-            mouse_df = df[df['mouse_name'] == mouse]
-            f.write(f"{mouse} (n={len(mouse_df)}):\n")
-            for metric in metrics:
-                f.write(f"  {metric}: mean={mouse_df[metric].mean():.3f}, "
-                       f"median={mouse_df[metric].median():.3f}\n")
-            f.write("\n")
-        
-        if 'r_squared' in df.columns:
-            f.write("-" * 80 + "\n")
-            f.write("GAUSSIAN FIT QUALITY (R²)\n")
-            f.write("-" * 80 + "\n\n")
-            f.write(f"  Mean: {df['r_squared'].mean():.3f}\n")
-            f.write(f"  Median: {df['r_squared'].median():.3f}\n")
-            f.write(f"  Min: {df['r_squared'].min():.3f}\n")
-            f.write(f"  Max: {df['r_squared'].max():.3f}\n")
-            f.write("\n")
-        
-        f.write("-" * 80 + "\n")
-        f.write("OUTPUT FILES\n")
-        f.write("-" * 80 + "\n\n")
-        f.write("  - results.csv: Full results table\n")
-        f.write("  - combined_*.png: Plots combined across all mice\n")
-        f.write("  - <mouse_name>/*.png: Individual plots for each mouse\n")
-        f.write("  - summary_rf_position_vs_metrics.png: RF position scatter plots\n")
-        f.write("  - correlation_matrix.png: Metric correlations\n")
-        if df['mouse_name'].nunique() > 1:
-            f.write("  - mouse_comparison.png: Cross-mouse comparisons\n")
-        f.write("\n")
-        
-        f.write("=" * 80 + "\n")
+        im = ax.imshow(average_rf, origin="lower", cmap='viridis', alpha=0.4, 
+                       extent=[x_min - x_padding, x_max + x_padding, 
+                               y_min - y_padding, y_max + y_padding],
+                       aspect='auto')
+    
+    # Plot each SF with different color
+    for i, sf in enumerate(unique_sfs):
+        sf_mask = (preferred_sfs == sf)
+        ax.scatter(x_positions[sf_mask], y_positions[sf_mask], 
+                  color=sf_colors[i], label=f'{sf:.2f} cpd', s=100, alpha=0.8,
+                  edgecolors='black', linewidths=1.0)
+    
+    ax.set_xlabel('RF Center X Position (degrees)', fontsize=14)
+    ax.set_ylabel('RF Center Y Position (degrees)', fontsize=14)
+    
+    # Create title
+    title = f'RF Centers Colored by Preferred Spatial Frequency\n({len(df)} cells)'
+    if mouse_name and probe_name:
+        title = f'{mouse_name} - {probe_name}\n' + title
+    elif probe_name:
+        title = f'{probe_name}\n' + title
+    elif mouse_name:
+        title = f'{mouse_name}\n' + title
+    
+    ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+    ax.legend(title='Preferred SF', bbox_to_anchor=(1.05, 1), 
+              loc='upper left', fontsize=10, title_fontsize=11)
+    ax.grid(True, alpha=0.3)
+    ax.set_aspect('equal')
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    
+    plt.close()
+
+
+def plot_rf_position_vs_pref_ori_from_csv(combined_df, save_path_x=None, save_path_y=None,
+                                          probe_name=None, mouse_name=None):
+    """
+    Create scatter plots: RF position (X and Y) vs preferred orientation.
+    Uses CSV data with RF centers already computed.
+    """
+    # Filter out rows without RF center data
+    df = combined_df.dropna(subset=['rf_x_center', 'rf_y_center'])
+    
+    if len(df) == 0:
+        print("No valid RF center data found")
+        return
+    
+    x_positions = df['rf_x_center'].values
+    y_positions = df['rf_y_center'].values
+    preferred_oris = df['pref_ori'].values
+    
+    unique_oris = np.unique(preferred_oris)
+    n_orientations = len(unique_oris)
+    
+    if n_orientations <= 10:
+        ori_colors = plt.cm.tab10(np.linspace(0, 1, n_orientations))
+    else:
+        ori_colors = plt.cm.tab20(np.linspace(0, 1, n_orientations))
+    
+    base_title_suffix = f'\n({len(df)} cells)'
+    if mouse_name and probe_name:
+        base_title = f'{mouse_name} - {probe_name}'
+    elif probe_name:
+        base_title = f'{probe_name}'
+    elif mouse_name:
+        base_title = f'{mouse_name}'
+    else:
+        base_title = ''
+    
+    # Plot 1: X position vs Preferred Orientation
+    fig1, ax1 = plt.subplots(figsize=(10, 8))
+    
+    for i, ori in enumerate(unique_oris):
+        ori_mask = (preferred_oris == ori)
+        ax1.scatter(x_positions[ori_mask], preferred_oris[ori_mask], 
+                   color=ori_colors[i], label=f'{int(ori)}°', s=100, alpha=0.7)
+    
+    ax1.set_xlabel('RF Center X Position (degrees)', fontsize=14)
+    ax1.set_ylabel('Preferred Orientation (degrees)', fontsize=14)
+    
+    title1 = 'RF X Position vs Preferred Orientation'
+    if base_title:
+        title1 = base_title + '\n' + title1 + base_title_suffix
+    else:
+        title1 = title1 + base_title_suffix
+    
+    ax1.set_title(title1, fontsize=16, fontweight='bold', pad=20)
+    ax1.legend(title='Preferred Orientation', bbox_to_anchor=(1.05, 1), 
+              loc='upper left', fontsize=10, title_fontsize=11)
+    ax1.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    if save_path_x:
+        plt.savefig(save_path_x, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved X position figure to: {save_path_x}")
+    
+    plt.close()
+    
+    # Plot 2: Y position vs Preferred Orientation
+    fig2, ax2 = plt.subplots(figsize=(10, 8))
+    
+    for i, ori in enumerate(unique_oris):
+        ori_mask = (preferred_oris == ori)
+        ax2.scatter(y_positions[ori_mask], preferred_oris[ori_mask], 
+                   color=ori_colors[i], label=f'{int(ori)}°', s=100, alpha=0.7)
+    
+    ax2.set_xlabel('RF Center Y Position (degrees)', fontsize=14)
+    ax2.set_ylabel('Preferred Orientation (degrees)', fontsize=14)
+    
+    title2 = 'RF Y Position vs Preferred Orientation'
+    if base_title:
+        title2 = base_title + '\n' + title2 + base_title_suffix
+    else:
+        title2 = title2 + base_title_suffix
+    
+    ax2.set_title(title2, fontsize=16, fontweight='bold', pad=20)
+    ax2.legend(title='Preferred Orientation', bbox_to_anchor=(1.05, 1), 
+              loc='upper left', fontsize=10, title_fontsize=11)
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    if save_path_y:
+        plt.savefig(save_path_y, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved Y position figure to: {save_path_y}")
+    
+    plt.close()
+
+
+def plot_rf_position_vs_pref_tf_from_csv(combined_df, save_path_x=None, save_path_y=None,
+                                         probe_name=None, mouse_name=None):
+    """
+    Create scatter plots: RF position (X and Y) vs preferred temporal frequency.
+    Uses CSV data with RF centers already computed.
+    """
+    # Filter out rows without RF center data
+    df = combined_df.dropna(subset=['rf_x_center', 'rf_y_center'])
+    
+    if len(df) == 0:
+        print("No valid RF center data found")
+        return
+    
+    x_positions = df['rf_x_center'].values
+    y_positions = df['rf_y_center'].values
+    preferred_tfs = df['pref_tf'].values
+    
+    unique_tfs = np.unique(preferred_tfs)
+    n_tfs = len(unique_tfs)
+    
+    if n_tfs <= 10:
+        tf_colors = plt.cm.tab10(np.linspace(0, 1, n_tfs))
+    else:
+        tf_colors = plt.cm.tab20(np.linspace(0, 1, n_tfs))
+    
+    base_title_suffix = f'\n({len(df)} cells)'
+    if mouse_name and probe_name:
+        base_title = f'{mouse_name} - {probe_name}'
+    elif probe_name:
+        base_title = f'{probe_name}'
+    elif mouse_name:
+        base_title = f'{mouse_name}'
+    else:
+        base_title = ''
+    
+    # Plot 1: X position vs Preferred TF
+    fig1, ax1 = plt.subplots(figsize=(10, 8))
+    
+    for i, tf in enumerate(unique_tfs):
+        tf_mask = (preferred_tfs == tf)
+        ax1.scatter(x_positions[tf_mask], preferred_tfs[tf_mask], 
+                   color=tf_colors[i], label=f'{tf:.1f} Hz', s=100, alpha=0.7)
+    
+    ax1.set_xlabel('RF Center X Position (degrees)', fontsize=14)
+    ax1.set_ylabel('Preferred Temporal Frequency (Hz)', fontsize=14)
+    
+    title1 = 'RF X Position vs Preferred Temporal Frequency'
+    if base_title:
+        title1 = base_title + '\n' + title1 + base_title_suffix
+    else:
+        title1 = title1 + base_title_suffix
+    
+    ax1.set_title(title1, fontsize=16, fontweight='bold', pad=20)
+    ax1.legend(title='Preferred TF', bbox_to_anchor=(1.05, 1), 
+              loc='upper left', fontsize=10, title_fontsize=11)
+    ax1.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    if save_path_x:
+        plt.savefig(save_path_x, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved X position figure to: {save_path_x}")
+    
+    plt.close()
+    
+    # Plot 2: Y position vs Preferred TF
+    fig2, ax2 = plt.subplots(figsize=(10, 8))
+    
+    for i, tf in enumerate(unique_tfs):
+        tf_mask = (preferred_tfs == tf)
+        ax2.scatter(y_positions[tf_mask], preferred_tfs[tf_mask], 
+                   color=tf_colors[i], label=f'{tf:.1f} Hz', s=100, alpha=0.7)
+    
+    ax2.set_xlabel('RF Center Y Position (degrees)', fontsize=14)
+    ax2.set_ylabel('Preferred Temporal Frequency (Hz)', fontsize=14)
+    
+    title2 = 'RF Y Position vs Preferred Temporal Frequency'
+    if base_title:
+        title2 = base_title + '\n' + title2 + base_title_suffix
+    else:
+        title2 = title2 + base_title_suffix
+    
+    ax2.set_title(title2, fontsize=16, fontweight='bold', pad=20)
+    ax2.legend(title='Preferred TF', bbox_to_anchor=(1.05, 1), 
+              loc='upper left', fontsize=10, title_fontsize=11)
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    if save_path_y:
+        plt.savefig(save_path_y, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved Y position figure to: {save_path_y}")
+    
+    plt.close()
+
+
+def plot_rf_position_vs_pref_sf_from_csv(combined_df, save_path_x=None, save_path_y=None,
+                                         probe_name=None, mouse_name=None):
+    """
+    Create scatter plots: RF position (X and Y) vs preferred spatial frequency.
+    Uses CSV data with RF centers already computed.
+    """
+    # Filter out rows without RF center data
+    df = combined_df.dropna(subset=['rf_x_center', 'rf_y_center'])
+    
+    if len(df) == 0:
+        print("No valid RF center data found")
+        return
+    
+    x_positions = df['rf_x_center'].values
+    y_positions = df['rf_y_center'].values
+    preferred_sfs = df['pref_sf'].values
+    
+    unique_sfs = np.unique(preferred_sfs)
+    n_sfs = len(unique_sfs)
+    
+    if n_sfs <= 10:
+        sf_colors = plt.cm.tab10(np.linspace(0, 1, n_sfs))
+    else:
+        sf_colors = plt.cm.tab20(np.linspace(0, 1, n_sfs))
+    
+    base_title_suffix = f'\n({len(df)} cells)'
+    if mouse_name and probe_name:
+        base_title = f'{mouse_name} - {probe_name}'
+    elif probe_name:
+        base_title = f'{probe_name}'
+    elif mouse_name:
+        base_title = f'{mouse_name}'
+    else:
+        base_title = ''
+    
+    # Plot 1: X position vs Preferred SF
+    fig1, ax1 = plt.subplots(figsize=(10, 8))
+    
+    for i, sf in enumerate(unique_sfs):
+        sf_mask = (preferred_sfs == sf)
+        ax1.scatter(x_positions[sf_mask], preferred_sfs[sf_mask], 
+                   color=sf_colors[i], label=f'{sf:.2f} cpd', s=100, alpha=0.7)
+    
+    ax1.set_xlabel('RF Center X Position (degrees)', fontsize=14)
+    ax1.set_ylabel('Preferred Spatial Frequency (cpd)', fontsize=14)
+    
+    title1 = 'RF X Position vs Preferred Spatial Frequency'
+    if base_title:
+        title1 = base_title + '\n' + title1 + base_title_suffix
+    else:
+        title1 = title1 + base_title_suffix
+    
+    ax1.set_title(title1, fontsize=16, fontweight='bold', pad=20)
+    ax1.legend(title='Preferred SF', bbox_to_anchor=(1.05, 1), 
+              loc='upper left', fontsize=10, title_fontsize=11)
+    ax1.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    if save_path_x:
+        plt.savefig(save_path_x, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved X position figure to: {save_path_x}")
+    
+    plt.close()
+    
+    # Plot 2: Y position vs Preferred SF
+    fig2, ax2 = plt.subplots(figsize=(10, 8))
+    
+    for i, sf in enumerate(unique_sfs):
+        sf_mask = (preferred_sfs == sf)
+        ax2.scatter(y_positions[sf_mask], preferred_sfs[sf_mask], 
+                   color=sf_colors[i], label=f'{sf:.2f} cpd', s=100, alpha=0.7)
+    
+    ax2.set_xlabel('RF Center Y Position (degrees)', fontsize=14)
+    ax2.set_ylabel('Preferred Spatial Frequency (cpd)', fontsize=14)
+    
+    title2 = 'RF Y Position vs Preferred Spatial Frequency'
+    if base_title:
+        title2 = base_title + '\n' + title2 + base_title_suffix
+    else:
+        title2 = title2 + base_title_suffix
+    
+    ax2.set_title(title2, fontsize=16, fontweight='bold', pad=20)
+    ax2.legend(title='Preferred SF', bbox_to_anchor=(1.05, 1), 
+              loc='upper left', fontsize=10, title_fontsize=11)
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    if save_path_y:
+        plt.savefig(save_path_y, dpi=300, bbox_inches='tight')
+        #print(f"✓ Saved Y position figure to: {save_path_y}")
+    
+    plt.close()

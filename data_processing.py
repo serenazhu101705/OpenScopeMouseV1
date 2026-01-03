@@ -11,6 +11,124 @@ import warnings
 
 from gaussian_filtering import fit_gaussian_to_rf
 
+
+def deg2rad(arr):
+    """Converts array-like input from degrees to radians"""
+    return arr / 180 * np.pi
+
+
+def osi(orivals, tuning):
+    """
+    Computes the orientation selectivity of a cell using normalized
+    circular variance (CirVar) as described in Ringbach 2002.
+    
+    From AllenSDK stimulus_analysis.py
+    
+    Parameters
+    ----------
+    orivals : complex array of length N
+         Each value the orientation of the stimulus (in radians).
+    tuning : float array of length N
+        Each value the (averaged) response of the cell at a different
+        orientation.
+    
+    Returns
+    -------
+    osi : float
+        Circular variance (scalar value, in radians) of the responses.
+    """
+    if len(orivals) == 0 or len(orivals) != len(tuning):
+        warnings.warn('orivals and tunings are of different lengths')
+        return np.nan
+    
+    tuning_sum = tuning.sum()
+    if tuning_sum == 0.0:
+        return np.nan
+    
+    cv_top = tuning * np.exp(1j * 2 * orivals)
+    return np.abs(cv_top.sum()) / tuning_sum
+
+
+def dsi(orivals, tuning):
+    """
+    Computes the direction selectivity of a cell.
+    See Ringbach 2002, Van Hooser 2014.
+    
+    From AllenSDK stimulus_analysis.py
+    
+    Parameters
+    ----------
+    orivals : complex array of length N
+         Each value the orientation of the stimulus (in radians).
+    tuning : float array of length N
+        Each value the (averaged) response of the cell at a different
+        orientation.
+    
+    Returns
+    -------
+    dsi : float
+        Direction selectivity index (scalar value, in radians).
+    """
+    if len(orivals) == 0 or len(orivals) != len(tuning):
+        warnings.warn('orivals and tunings are of different lengths')
+        return np.nan
+    
+    tuning_sum = tuning.sum()
+    if tuning_sum == 0.0:
+        return np.nan
+    
+    cv_top = tuning * np.exp(1j * orivals)
+    return np.abs(cv_top.sum()) / tuning_sum
+
+
+def calculate_osi_dsi(unit_id, pref_tf, conditionwise_stats, stimulus_conditions, orivals):
+    """
+    Calculate OSI and DSI for a unit at their preferred temporal frequency.
+    
+    From AllenSDK drifting_gratings.py
+    
+    Parameters
+    ----------
+    unit_id : int
+        Unit ID
+    pref_tf : float
+        Preferred temporal frequency
+    conditionwise_stats : pd.DataFrame
+        Conditionwise spike statistics
+    stimulus_conditions : pd.DataFrame
+        Stimulus conditions table
+    orivals : np.array
+        Array of orientation values (not used, kept for compatibility)
+        
+    Returns
+    -------
+    osi_value : float
+        Orientation selectivity index
+    dsi_value : float
+        Direction selectivity index
+    """
+    # Get condition indices for this temporal frequency
+    condition_inds = stimulus_conditions[stimulus_conditions['temporal_frequency'] == pref_tf].index.values
+    
+    # Get the spike statistics for this unit and these conditions
+    df = conditionwise_stats.loc[unit_id].loc[condition_inds]
+    
+    # Add orientation column
+    df = df.assign(ori=stimulus_conditions.loc[df.index.values]['orientation'])
+    
+    # Average across repetitions for each orientation
+    tuning = df.groupby('ori')['spike_mean'].mean().sort_index().values
+    
+    # Get unique orientations (sorted)
+    unique_oris = np.sort(df['ori'].unique())
+    
+    # Convert orientations to radians
+    orivals_rad = deg2rad(unique_oris).astype('complex128')
+    
+    # Calculate OSI and DSI
+    return osi(orivals_rad, tuning), dsi(orivals_rad, tuning)
+
+
 def presentationwise_spike_times(nwb, stim_table, stimulus_presentation_ids=None, unit_ids=None):
     """
     Produce a table associating spike times with units and stimulus presentations.
@@ -303,30 +421,31 @@ def get_rf(spike_times, xs, ys, rf_stim_table):
     
     return unit_rf
 
+# moved this to main compute_pref_variables.py
 
-def load_nwb_data(nwb_path):
-    """
-    Load NWB file and extract necessary data.
+# def load_nwb_data(nwb_path):
+#     """
+#     Load NWB file and extract necessary data.
     
-    Parameters:
-    -----------
-    nwb_path : Path
-        Path to NWB file
+#     Parameters:
+#     -----------
+#     nwb_path : Path
+#         Path to NWB file
     
-    Returns:
-    --------
-    dict : Dictionary containing NWB data objects
-    """
-    io = NWBHDF5IO(str(nwb_path), 'r')
-    nwb = io.read()
+#     Returns:
+#     --------
+#     dict : Dictionary containing NWB data objects
+#     """
+#     io = NWBHDF5IO(str(nwb_path), 'r', load_namespaces=True)
+#     nwb = io.read()
     
-    return {
-        'nwb': nwb,
-        'io': io,
-        'units': nwb.units.to_dataframe(),
-        'rf_stim_table': nwb.intervals["receptive_field_block_presentations"].to_dataframe(),
-        'dg_stim_table': nwb.intervals["drifting_gratings_field_block_presentations"].to_dataframe()
-    }
+#     return {
+#         'nwb': nwb,
+#         'io': io,
+#         'units': nwb.units.to_dataframe(),
+#         'rf_stim_table': nwb.intervals["receptive_field_block_presentations"].to_dataframe(),
+#         'dg_stim_table': nwb.intervals["drifting_gratings_field_block_presentations"].to_dataframe()
+#     }
 
 
 def process_units(nwb_data, probe, all_units=False, verbose=False):
@@ -353,9 +472,14 @@ def process_units(nwb_data, probe, all_units=False, verbose=False):
     nwb = nwb_data['nwb']
     
     # Get unique RF positions
-    xs = np.sort(np.array(list(set(rf_stim_table.x_position)), dtype=float))
-    ys = np.sort(np.array(list(set(rf_stim_table.y_position)), dtype=float))
-    
+    xs = list(set(rf_stim_table.x_position))
+    ys = list(set(rf_stim_table.y_position))
+
+    xs = [float(x) for x in xs]
+    ys = [float(y) for y in ys]
+
+    xs = np.sort(xs)
+    ys = np.sort(ys)
     if verbose:
         print(f"    RF grid: xs={xs}, ys={ys}")
     
@@ -364,7 +488,7 @@ def process_units(nwb_data, probe, all_units=False, verbose=False):
     unit_rfs = []
     
     for unit_idx in range(len(units)):
-        if select_condition(unit_idx, units, probe, all_units):
+        if select_condition(unit_idx, units, probe):
             unit_indices.append(unit_idx)
             
             # Get spike times and calculate RF
@@ -384,141 +508,6 @@ def process_units(nwb_data, probe, all_units=False, verbose=False):
     }
 
 
-def calculate_preferred_metrics(nwb, unit_idx, dg_stim_table, presentation_ids=None, use_curvefit=False):
-    """
-    Calculate preferred orientation, direction, temporal frequency, and spatial frequency.
-    
-    Parameters:
-    -----------
-    nwb : NWBFile
-        NWB file object
-    unit_idx : int
-        Unit index (actual unit ID from the NWB file)
-    dg_stim_table : DataFrame
-        Drifting gratings stimulus presentation table
-    presentation_ids : array-like, optional
-        Specific presentation IDs to use
-    use_curvefit : bool
-        If True, use curve fitting to find preferences. If False, use argmax (default: False)
-    
-    Returns:
-    --------
-    dict : Dictionary with preferred metrics
-    """
-    # Ensure numeric types
-    dg_stim_table = dg_stim_table.copy()
-    dg_stim_table['orientation'] = dg_stim_table['orientation'].astype(float)
-    dg_stim_table['temporal_frequency'] = dg_stim_table['temporal_frequency'].astype(float)
-    dg_stim_table['spatial_frequency'] = dg_stim_table['spatial_frequency'].astype(float)
-    
-    if presentation_ids is None:
-        presentation_ids = dg_stim_table.index.values
-    
-    # Calculate conditionwise spike statistics
-    conditionwise_stats, stimulus_conditions = conditionwise_spike_statistics(
-        nwb,
-        stimulus_block='drifting_gratings_field_block_presentations',
-        stimulus_presentation_ids=presentation_ids,
-        unit_ids=[unit_idx]
-    )
-    
-    # Get orientation, temporal frequency, and spatial frequency values
-    ori_vals = np.sort(stimulus_conditions['orientation'].unique())
-    tf_vals = np.sort(stimulus_conditions['temporal_frequency'].unique())
-    sf_vals = np.sort(stimulus_conditions['spatial_frequency'].unique())
-    
-    # Step 1: Find preferred orientation (across all TFs and SFs)
-    ori_responses = []
-    for ori in ori_vals:
-        # Get all conditions with this orientation
-        ori_conditions = stimulus_conditions[
-            stimulus_conditions['orientation'] == ori
-        ].index.values
-        
-        try:
-            mean_response = conditionwise_stats.loc[unit_idx].loc[ori_conditions]['spike_mean'].mean()
-            mean_response = float(mean_response)
-        except (KeyError, ValueError, TypeError):
-            mean_response = 0.0
-        ori_responses.append(mean_response)
-    
-    pref_ori = ori_vals[np.argmax(ori_responses)]
-    
-    # Step 2: Find preferred temporal frequency (at preferred orientation, across all SFs)
-    tf_responses = []
-    for tf in tf_vals:
-        # Filter for conditions with preferred orientation and this TF
-        ori_tf_conditions = stimulus_conditions[
-            (stimulus_conditions['orientation'] == pref_ori) & 
-            (stimulus_conditions['temporal_frequency'] == tf)
-        ].index.values
-        
-        try:
-            mean_response = conditionwise_stats.loc[unit_idx].loc[ori_tf_conditions]['spike_mean'].mean()
-            mean_response = float(mean_response)
-        except (KeyError, ValueError, TypeError):
-            mean_response = 0.0
-        tf_responses.append(mean_response)
-    
-    pref_tf = tf_vals[np.argmax(tf_responses)]
-    
-    # Step 3: Find preferred spatial frequency (at preferred orientation, across all TFs)
-    sf_responses = []
-    for sf in sf_vals:
-        # Filter for conditions with preferred orientation and this SF
-        ori_sf_conditions = stimulus_conditions[
-            (stimulus_conditions['orientation'] == pref_ori) &
-            (stimulus_conditions['spatial_frequency'] == sf)
-        ].index.values
-        
-        try:
-            mean_response = conditionwise_stats.loc[unit_idx].loc[ori_sf_conditions]['spike_mean'].mean()
-            mean_response = float(mean_response)
-        except (KeyError, ValueError, TypeError):
-            mean_response = 0.0
-        sf_responses.append(mean_response)
-    
-    pref_sf = sf_vals[np.argmax(sf_responses)]
-    
-    # Calculate OSI (Orientation Selectivity Index)
-    if len(ori_responses) >= 2:
-        sorted_ori_responses = sorted(ori_responses, reverse=True)
-        if (sorted_ori_responses[0] + sorted_ori_responses[1]) > 0:
-            osi = (sorted_ori_responses[0] - sorted_ori_responses[1]) / (sorted_ori_responses[0] + sorted_ori_responses[1])
-        else:
-            osi = 0.0
-    else:
-        osi = 0.0
-    
-    # Calculate DSI (Direction Selectivity Index)
-    if len(ori_vals) >= 2:
-        pref_ori_idx = np.argmax(ori_responses)
-        opposite_ori_idx = (pref_ori_idx + len(ori_vals) // 2) % len(ori_vals)
-        pref_response = ori_responses[pref_ori_idx]
-        opp_response = ori_responses[opposite_ori_idx]
-        if (pref_response + opp_response) > 0:
-            dsi = (pref_response - opp_response) / (pref_response + opp_response)
-        else:
-            dsi = 0.0
-    else:
-        dsi = 0.0
-    
-    # Handle curvefit option
-    if use_curvefit:
-        print("Warning: Curve fitting not yet implemented, using argmax")
-    
-    return {
-        'pref_ori': float(pref_ori),
-        'pref_tf': float(pref_tf),
-        'pref_sf': float(pref_sf),
-        'osi': float(osi),
-        'dsi': float(dsi),
-        'ori_responses': ori_responses,
-        'tf_responses': tf_responses,
-        'sf_responses': sf_responses
-    }
-
-
 def calculate_rf_center(rf, xs, ys):
     """
     Calculate the center of a receptive field using Gaussian fitting.
@@ -526,7 +515,7 @@ def calculate_rf_center(rf, xs, ys):
     Parameters:
     -----------
     rf : ndarray
-        2D receptive field arrpay
+        2D receptive field array
     xs : array
         X positions
     ys : array
@@ -534,7 +523,7 @@ def calculate_rf_center(rf, xs, ys):
     
     Returns:
     --------
-    tuple : (x_center, y_center) or None if fitting fails
+    tuple : (x_center, y_center, r_squared) or (None, None, None) if fitting fails
     """
     from gaussian_filtering import fit_gaussian_to_rf
     
@@ -543,7 +532,7 @@ def calculate_rf_center(rf, xs, ys):
     
     if popt is None:
         # If Gaussian fit failed, return None
-        return None
+        return None, None, None
     
     # Extract center coordinates (xo, yo are at indices 1 and 2)
     x_idx = popt[1]  # Index in the RF array
@@ -557,7 +546,7 @@ def calculate_rf_center(rf, xs, ys):
     x_pos = np.interp(x_idx, np.arange(len(xs_float)), xs_float)
     y_pos = np.interp(y_idx, np.arange(len(ys_float)), ys_float)
     
-    return (float(x_pos), float(y_pos))
+    return float(x_pos), float(y_pos), float(r_squared)
 
 
 def calculate_all_metrics(nwb_data, units_data, mouse_name, probe, use_curvefit=False, verbose=False):
@@ -586,49 +575,153 @@ def calculate_all_metrics(nwb_data, units_data, mouse_name, probe, use_curvefit=
     results = []
     
     nwb = nwb_data['nwb']
+    units = nwb_data['units']
     dg_stim_table = nwb_data['dg_stim_table']
     xs = units_data['xs']
     ys = units_data['ys']
     
-    for idx, unit_idx in enumerate(units_data['unit_indices']):
+    unit_indices = units_data['unit_indices']
+    total_units = len(unit_indices)
+    
+    if total_units == 0:
+        return None
+    
+    print(f"    Processing {total_units} units...")
+    
+    # OPTIMIZATION: Calculate conditionwise statistics for ALL units at once
+    if verbose:
+        print(f"    Calculating spike statistics for all {total_units} units...")
+    
+    try:
+        conditionwise_stats, stimulus_conditions = conditionwise_spike_statistics(
+            nwb,
+            stimulus_block='drifting_gratings_field_block_presentations',
+            stimulus_presentation_ids=dg_stim_table.index.values,
+            unit_ids=unit_indices  # Pass all unit IDs at once
+        )
+    except Exception as e:
+        print(f"    Error calculating conditionwise statistics: {e}")
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        return None
+    
+    # Get unique stimulus values
+    ori_vals = np.sort(stimulus_conditions['orientation'].unique())
+    tf_vals = np.sort(stimulus_conditions['temporal_frequency'].unique())
+    sf_vals = np.sort(stimulus_conditions['spatial_frequency'].unique())
+    
+    if verbose:
+        print(f"    Processing individual unit metrics...")
+    
+    # Process each unit
+    for idx, unit_idx in enumerate(unit_indices):
+        if verbose and (idx % 50 == 0 or idx == total_units - 1):
+            print(f"      Unit {idx+1}/{total_units}...")
+        
         try:
-            # Calculate RF center using Gaussian fitting
-            rf = units_data['unit_rfs'][idx]
-            rf_center = calculate_rf_center(rf, xs, ys)
-            
-            if rf_center is None:
+            # Get this unit's statistics from the pre-calculated results
+            try:
+                unit_stats = conditionwise_stats.loc[unit_idx]
+            except KeyError:
                 if verbose:
-                    print(f"      Warning: Gaussian fit failed for unit {unit_idx}, skipping")
+                    print(f"      Warning: No statistics found for unit {unit_idx}")
                 continue
             
-            rf_x_center, rf_y_center = rf_center
+            # Step 1: Calculate preferred orientation (across all TFs and SFs)
+            ori_responses = []
+            for ori in ori_vals:
+                ori_conditions = stimulus_conditions[
+                    stimulus_conditions['orientation'] == ori
+                ].index.values
+                
+                try:
+                    mean_response = unit_stats.loc[ori_conditions]['spike_mean'].mean()
+                    mean_response = float(mean_response)
+                except (KeyError, ValueError, TypeError):
+                    mean_response = 0.0
+                ori_responses.append(mean_response)
             
-            # Calculate preferred metrics using conditionwise statistics
-            metrics = calculate_preferred_metrics(
-                nwb=nwb,
-                unit_idx=unit_idx,
-                dg_stim_table=dg_stim_table,
-                use_curvefit=use_curvefit
+            pref_ori = ori_vals[np.argmax(ori_responses)]
+            
+            # Step 2: Calculate preferred temporal frequency (at preferred orientation)
+            tf_responses = []
+            for tf in tf_vals:
+                ori_tf_conditions = stimulus_conditions[
+                    (stimulus_conditions['orientation'] == pref_ori) & 
+                    (stimulus_conditions['temporal_frequency'] == tf)
+                ].index.values
+                
+                try:
+                    mean_response = unit_stats.loc[ori_tf_conditions]['spike_mean'].mean()
+                    mean_response = float(mean_response)
+                except (KeyError, ValueError, TypeError):
+                    mean_response = 0.0
+                tf_responses.append(mean_response)
+            
+            pref_tf = tf_vals[np.argmax(tf_responses)]
+            
+            # Step 3: Calculate preferred spatial frequency (at preferred orientation)
+            sf_responses = []
+            for sf in sf_vals:
+                ori_sf_conditions = stimulus_conditions[
+                    (stimulus_conditions['orientation'] == pref_ori) &
+                    (stimulus_conditions['spatial_frequency'] == sf)
+                ].index.values
+                
+                try:
+                    mean_response = unit_stats.loc[ori_sf_conditions]['spike_mean'].mean()
+                    mean_response = float(mean_response)
+                except (KeyError, ValueError, TypeError):
+                    mean_response = 0.0
+                sf_responses.append(mean_response)
+            
+            pref_sf = sf_vals[np.argmax(sf_responses)]
+            
+            # Calculate OSI and DSI
+            osi_val, dsi_val = calculate_osi_dsi(
+                unit_idx, pref_tf, conditionwise_stats, stimulus_conditions, ori_vals
             )
+            
+            peak_dff_dg = float(max(ori_responses)) if ori_responses else 0.0
+            
+            # Calculate RF center using Gaussian fitting
+            rf = units_data['unit_rfs'][idx]
+            popt, r_squared, _ = fit_gaussian_to_rf(rf)
+            
+            if popt is not None:
+                x_idx = popt[1]
+                y_idx = popt[2]
+                x_pos = np.interp(x_idx, np.arange(len(xs)), xs)
+                y_pos = np.interp(y_idx, np.arange(len(ys)), ys)
+            else:
+                x_pos = None
+                y_pos = None
+            
+            # Get SNR
+            snr = float(units['snr'][unit_idx])
             
             # Compile results
             result = {
                 'mouse_name': mouse_name,
                 'probe': probe,
-                'unit_id': str(unit_idx),
-                'pref_ori': metrics['pref_ori'],
-                'pref_tf': metrics['pref_tf'],
-                'pref_sf': metrics['pref_sf'],
-                'osi': metrics['osi'],
-                'dsi': metrics['dsi'],
-                'rf_x_center': rf_x_center,
-                'rf_y_center': rf_y_center
+                'unit_id': int(unit_idx),
+                'rf': rf,
+                'pref_ori': float(pref_ori),
+                'pref_tf': float(pref_tf),
+                'pref_sf': float(pref_sf),
+                'osi_dg': float(osi_val),
+                'dsi_dg': float(dsi_val),
+                'peak_dff_dg': peak_dff_dg,
+                'rf_x_center': x_pos if x_pos is not None else np.nan,
+                'rf_y_center': y_pos if y_pos is not None else np.nan,
+                'rf_r_squared': r_squared if r_squared is not None else np.nan,
+                'snr': snr
             }
             
-            # Add R² if available
-            if 'r2_values' in units_data:
-                original_idx = units_data['filtered_indices'][idx]
-                result['r_squared'] = units_data['r2_values'][original_idx]
+            # Add R² from filtering if available
+            if 'r2_values' in units_data and idx < len(units_data['r2_values']):
+                result['r_squared_filter'] = units_data['r2_values'][idx]
             
             results.append(result)
             
@@ -638,5 +731,8 @@ def calculate_all_metrics(nwb_data, units_data, mouse_name, probe, use_curvefit=
                 import traceback
                 traceback.print_exc()
             continue
+    
+    if use_curvefit:
+        print("    Warning: Curve fitting not yet implemented, using argmax")
     
     return pd.DataFrame(results) if results else None
