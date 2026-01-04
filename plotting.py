@@ -86,7 +86,7 @@ def plot_summary_figures(df, units_data, output_dir, probe_name=None):
     df : DataFrame
         Results dataframe
     units_data : dict
-        Dictionary containing 'unit_rfs' or 'filtered_rfs'
+        Dictionary containing 'unit_rfs' or can be None
     output_dir : Path
         Output directory
     probe_name : str, optional
@@ -97,20 +97,28 @@ def plot_summary_figures(df, units_data, output_dir, probe_name=None):
     # Get mouse name if only one mouse
     mouse_name = df['mouse_name'].unique()[0] if df['mouse_name'].nunique() == 1 else None
     
-    # Get the RFs from units_data
-    # Try to get filtered RFs first, otherwise use unit_rfs
-    if 'unit_rfs' in units_data:
-        filtered_rfs = units_data['unit_rfs']
-    else:
-        filtered_rfs = None
-
-    plot_avg_rf(
-        df,
-        filtered_rfs,
-        save_path=output_dir / 'average_rf.png',
-        probe_name=probe_name,
-        mouse_name=mouse_name
-    )
+    # Extract RFs from the DataFrame 'rf' column
+    filtered_rfs = None
+    if 'rf' in df.columns:
+        # Extract RF arrays from DataFrame
+        filtered_rfs = [rf for rf in df['rf'].values if rf is not None]
+        if len(filtered_rfs) == 0:
+            filtered_rfs = None
+    
+    # If DataFrame doesn't have RFs, try units_data
+    if filtered_rfs is None and units_data is not None:
+        if 'unit_rfs' in units_data:
+            filtered_rfs = units_data['unit_rfs']
+    
+    # Plot average RF (if RFs are available)
+    if filtered_rfs is not None:
+        plot_avg_rf(
+            df,
+            filtered_rfs,
+            save_path=output_dir / 'average_rf.png',
+            probe_name=probe_name,
+            mouse_name=mouse_name
+        )
     
     # Check if we have RF center data
     if 'rf_x_center' in df.columns and 'rf_y_center' in df.columns:
@@ -167,7 +175,6 @@ def plot_summary_figures(df, units_data, output_dir, probe_name=None):
             probe_name=probe_name,
             mouse_name=mouse_name
         )
-
 # ============================================================================
 # Core plotting functions from preferred_metrics_new.ipynb
 # ============================================================================

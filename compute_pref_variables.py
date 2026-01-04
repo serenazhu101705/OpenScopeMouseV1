@@ -26,7 +26,10 @@ from gaussian_filtering import filter_rfs_by_gaussian_fit
 
 from plotting import (
     plot_summary_figures,
-    plot_metric_distributions
+    plot_metric_distributions,
+    plot_preferred_orientation_bar,
+    plot_preferred_tf_bar,
+    plot_preferred_sf_bar
 )
 from utils import create_output_directory, save_results
 
@@ -46,6 +49,9 @@ Examples:
   
   # Without filtering
   python compute_pref_variables.py --data_dir /path/to/data --probe ProbeA --all_units
+  
+  # Only combine existing results (skip processing)
+  python compute_pref_variables.py --data_dir /path/to/data --output_dir ../results/existing_results --combine_only
         """
     )
     
@@ -119,13 +125,205 @@ Examples:
         help='Probe name to analyze (e.g., ProbeA, ProbeB). If not specified, analyzes all probes.'
     )
 
+    # Combine only option
+    parser.add_argument(
+        '--combine_only',
+        action='store_true',
+        help='Skip NWB processing and only combine existing CSV results from output directory'
+    )
+
     
     return parser.parse_args()
+
+import ast
+
+def combine_existing_results(output_dir, args):
+    """
+    Combine existing CSV results from a results directory.
+    
+    Parameters:
+    -----------
+    output_dir : Path
+        Path to existing results directory
+    args : argparse.Namespace
+        Command line arguments
+    """
+    output_dir = Path(output_dir)
+    
+    if not output_dir.exists():
+        print(f"Error: Output directory does not exist: {output_dir}")
+        sys.exit(1)
+    
+    print("=" * 80)
+    print("Combining existing results...")
+    print("=" * 80)
+    print(f"Searching for CSV files in: {output_dir}")
+    print()
+    
+    # Find all CSV files in mouse/probe subdirectories
+    all_csvs = []
+    for mouse_dir in output_dir.iterdir():
+        if not mouse_dir.is_dir() or not mouse_dir.name.startswith('sub-'):
+            continue
+        
+        for probe_dir in mouse_dir.iterdir():
+            if not probe_dir.is_dir():
+                continue
+            
+            # Look for CSV files with metrics
+            csv_files = list(probe_dir.glob("*_metrics.csv"))
+            for csv_file in csv_files:
+                all_csvs.append(csv_file)
+                print(f"  Found: {csv_file.relative_to(output_dir)}")
+    
+    if not all_csvs:
+        print("Error: No CSV files found in output directory")
+        print("Expected structure: output_dir/sub-XXXXX/ProbeX/*_metrics.csv")
+        sys.exit(1)
+    
+    print(f"\nFound {len(all_csvs)} CSV files")
+    print()
+    
+    # Load and combine all CSVs
+    all_dfs = []
+    for csv_path in all_csvs:
+        try:
+            df = pd.read_csv(csv_path)
+            
+            # Convert RF column from string back to numpy array
+            if 'rf' in df.columns:
+                def parse_rf(rf_str):
+                    try:
+                        if pd.isna(rf_str):
+                            return None
+                        if isinstance(rf_str, str):
+                            # Try ast.literal_eval first
+                            return np.array(ast.literal_eval(rf_str))
+                        else:
+                            return rf_str
+                    except (ValueError, SyntaxError) as e:
+                        print(f"    Warning: Could not parse RF in {csv_path.name}: {e}")
+                        return None
+                
+                df['rf'] = df['rf'].apply(parse_rf)
+            
+            all_dfs.append(df)
+            print(f"  ✓ Loaded: {csv_path.name} ({len(df)} units)")
+            
+        except Exception as e:
+            print(f"  ✗ Warning: Could not load {csv_path.name}: {e}")
+            continue
+    
+    if not all_dfs:
+        print("Error: Could not load any CSV files")
+        sys.exit(1)
+    
+    print(f"\n✓ Successfully loaded {len(all_dfs)} CSV files")
+    print()
+    
+    # Combine all results
+    master_df = pd.concat(all_dfs, ignore_index=True)
+    
+    # Save master CSV
+    master_filename = "all_mice_all_probes_results.csv"
+    master_csv_path = output_dir / master_filename
+    master_df.to_csv(master_csv_path, index=False)
+    
+    print(f"Master CSV saved: {master_csv_path}")
+    print(f"  Total units: {len(master_df)}")
+    print(f"  Total mice: {master_df['mouse_name'].nunique()}")
+    print(f"  Total probes: {master_df['probe'].nunique()}")
+    print(f"  Probes: {', '.join(sorted(master_df['probe'].unique()))}")
+    print()
+    
+    # Generate master plots
+    if not args.no_plots:
+        print("Generating master plots (all mice, all probes)...")
+        empty_units_data = {}
+        plot_metric_distributions(master_df, empty_units_data, output_dir, probe_name="all_mice_all_probes")
+        plot_summary_figures(master_df, empty_units_data, output_dir, probe_name="all_mice_all_probes")
+        print(f"✓ Master plots saved to {output_dir}")
+        print()
+    
+    # Create per-probe combined results
+    print("=" * 80)
+    print("Creating per-probe results across all mice...")
+    print("=" * 80)
+    
+    for probe in sorted(master_df['probe'].unique()):
+        print(f"\nProcessing {probe}...")
+        
+        # Filter data for this probe
+        probe_df = master_df[master_df['probe'] == probe].copy()
+        
+        # Create probe directory
+        probe_dir = output_dir / probe
+        probe_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save probe-specific CSV
+        probe_csv_path = probe_dir / f"{probe}_all_mice_results.csv"
+        probe_df.to_csv(probe_csv_path, index=False)
+        print(f"  ✓ Saved CSV: {probe_csv_path}")
+        print(f"    Units: {len(probe_df)}, Mice: {probe_df['mouse_name'].nunique()}")
+        
+        # Generate plots
+        if not args.no_plots:
+            print(f"  Generating plots for {probe} (all mice)...")
+            empty_units_data = {}
+            
+            # Distribution plots
+            plot_metric_distributions(probe_df, empty_units_data, probe_dir, probe_name=f"{probe}_all_mice")
+            
+            # Summary figures
+            plot_summary_figures(probe_df, empty_units_data, probe_dir, probe_name=f"{probe}_all_mice")
+            
+            # Normalized bar plots
+            plot_preferred_orientation_bar(
+                probe_df, 
+                peak_dff_min=1.0,
+                save_path=probe_dir / f'preferred_orientation_{probe}_all_mice_normalized.png',
+                probe_name=probe,
+                mouse_name=f"All Mice (n={probe_df['mouse_name'].nunique()})",
+                normalize=True
+            )
+            
+            plot_preferred_tf_bar(
+                probe_df,
+                peak_dff_min=1.0,
+                save_path=probe_dir / f'preferred_tf_{probe}_all_mice_normalized.png',
+                probe_name=probe,
+                mouse_name=f"All Mice (n={probe_df['mouse_name'].nunique()})",
+                normalize=True
+            )
+            
+            plot_preferred_sf_bar(
+                probe_df,
+                peak_dff_min=1.0,
+                save_path=probe_dir / f'preferred_sf_{probe}_all_mice_normalized.png',
+                probe_name=probe,
+                mouse_name=f"All Mice (n={probe_df['mouse_name'].nunique()})",
+                normalize=True
+            )
+            
+            print(f"  ✓ Plots saved to {probe_dir}")
+    
+    print()
+    print("=" * 80)
+    print(f"Analysis complete! Results saved to: {output_dir}")
+    print("=" * 80)
+
 
 def main():
     """Main execution function."""
     args = parse_arguments()
     
+    # If combine_only flag is set, just combine existing results
+    if args.combine_only:
+        output_dir = Path(args.output_dir)
+        combine_existing_results(output_dir, args)
+        return
+    
+    # Otherwise, proceed with normal processing
     # Validate inputs
     data_dir = Path(args.data_dir)
     if not data_dir.exists():
@@ -197,7 +395,7 @@ def main():
                 print(f"  Analyzing single probe: {args.probe}")
             else:
                 # Auto-detect all probes from this mouse
-                probes_to_analyze = sorted(np.unique(units['device_name'][:]))
+                probes_to_analyze = sorted(set(units['device_name'][:]))
                 print(f"  Found {len(probes_to_analyze)} probes: {', '.join(probes_to_analyze)}")
             
             print()
@@ -316,7 +514,7 @@ def main():
             continue
         
         io.close()
-        
+
     # Combine and save results
     if all_mouse_results:
         print("=" * 80)
@@ -341,8 +539,9 @@ def main():
         # Generate master plots across all mice and all probes
         if not args.no_plots:
             print("Generating master plots (all mice, all probes)...")
-            plot_metric_distributions(master_df, main_output_dir, probe_name="all_mice_all_probes")
-            plot_summary_figures(master_df, main_output_dir, probe_name="all_mice_all_probes")
+            empty_units_data = {}
+            plot_metric_distributions(master_df, empty_units_data, main_output_dir, probe_name="all_mice_all_probes")
+            plot_summary_figures(master_df, empty_units_data, main_output_dir, probe_name="all_mice_all_probes")
             print(f"✓ Master plots saved to {main_output_dir}")
             print()
         
@@ -370,8 +569,42 @@ def main():
             # Generate plots for this probe across all mice
             if not args.no_plots:
                 print(f"  Generating plots for {probe} (all mice)...")
-                plot_metric_distributions(probe_df, probe_dir, probe_name=f"{probe}_all_mice")
-                plot_summary_figures(probe_df, probe_dir, probe_name=f"{probe}_all_mice")
+                empty_units_data = {}
+                
+                # Distribution plots
+                plot_metric_distributions(probe_df, empty_units_data, probe_dir, probe_name=f"{probe}_all_mice")
+                
+                # Summary figures (RF position plots)
+                plot_summary_figures(probe_df, empty_units_data, probe_dir, probe_name=f"{probe}_all_mice")
+                
+                # Additional normalized plots
+                plot_preferred_orientation_bar(
+                    probe_df, 
+                    peak_dff_min=1.0,
+                    save_path=probe_dir / f'preferred_orientation_{probe}_all_mice_normalized.png',
+                    probe_name=probe,
+                    mouse_name=f"All Mice (n={probe_df['mouse_name'].nunique()})",
+                    normalize=True
+                )
+                
+                plot_preferred_tf_bar(
+                    probe_df,
+                    peak_dff_min=1.0,
+                    save_path=probe_dir / f'preferred_tf_{probe}_all_mice_normalized.png',
+                    probe_name=probe,
+                    mouse_name=f"All Mice (n={probe_df['mouse_name'].nunique()})",
+                    normalize=True
+                )
+                
+                plot_preferred_sf_bar(
+                    probe_df,
+                    peak_dff_min=1.0,
+                    save_path=probe_dir / f'preferred_sf_{probe}_all_mice_normalized.png',
+                    probe_name=probe,
+                    mouse_name=f"All Mice (n={probe_df['mouse_name'].nunique()})",
+                    normalize=True
+                )
+                
                 print(f"  ✓ Plots saved to {probe_dir}")
         
         print()
