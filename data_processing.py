@@ -16,7 +16,8 @@ def deg2rad(arr):
     """Converts array-like input from degrees to radians"""
     return arr / 180 * np.pi
 
-
+# from lines 812 - 840 of AllenSDK/allensdk/brain_observatory/ecephys/stimulus_analysis/stimulus_analysis.py
+# https://github.com/AllenInstitute/AllenSDK/blob/a9b5c685396126d9748f1ccecf7c00f440569f69/allensdk/brain_observatory/ecephys/stimulus_analysis/stimulus_analysis.py
 def osi(orivals, tuning):
     """
     Computes the orientation selectivity of a cell using normalized
@@ -48,7 +49,8 @@ def osi(orivals, tuning):
     cv_top = tuning * np.exp(1j * 2 * orivals)
     return np.abs(cv_top.sum()) / tuning_sum
 
-
+# from lines 843 - 860 of AllenSDK/allensdk/brain_observatory/ecephys/stimulus_analysis/stimulus_analysis.py
+# https://github.com/AllenInstitute/AllenSDK/blob/a9b5c685396126d9748f1ccecf7c00f440569f69/allensdk/brain_observatory/ecephys/stimulus_analysis/stimulus_analysis.py
 def dsi(orivals, tuning):
     """
     Computes the direction selectivity of a cell.
@@ -80,7 +82,8 @@ def dsi(orivals, tuning):
     cv_top = tuning * np.exp(1j * orivals)
     return np.abs(cv_top.sum()) / tuning_sum
 
-
+# from lines 290 - 319 of AllenSDK/allensdk/brain_observatory/ecephys/stimulus_analysis/drifting_gratings.py
+# https://github.com/AllenInstitute/AllenSDK/blob/a9b5c685396126d9748f1ccecf7c00f440569f69/allensdk/brain_observatory/ecephys/stimulus_analysis/drifting_gratings.py
 def calculate_osi_dsi(unit_id, pref_tf, conditionwise_stats, stimulus_conditions, orivals):
     """
     Calculate OSI and DSI for a unit at their preferred temporal frequency.
@@ -225,7 +228,8 @@ def presentationwise_spike_times(nwb, stim_table, stimulus_presentation_ids=None
     
     return spikes_with_onset
 
-
+# from lines 1491-1500 AllenSDK/allensdk/brain_observatory/ecephys/ecephys_session.py
+# https://github.com/AllenInstitute/AllenSDK/blob/a9b5c685396126d9748f1ccecf7c00f440569f69/allensdk/brain_observatory/ecephys/ecephys_session.py
 def _extract_summary_count_statistics(index, group):
     """
     Extract summary statistics for spike counts.
@@ -242,7 +246,8 @@ def _extract_summary_count_statistics(index, group):
         "spike_sem": scipy.stats.sem(group["spike_count"].values)
     }
 
-
+# from lines 891-980 AllenSDK/allensdk/brain_observatory/ecephys/ecephys_session.py
+# https://github.com/AllenInstitute/AllenSDK/blob/a9b5c685396126d9748f1ccecf7c00f440569f69/allensdk/brain_observatory/ecephys/ecephys_session.py
 def conditionwise_spike_statistics(nwb, stimulus_block='drifting_gratings_field_block_presentations',
                                    stimulus_presentation_ids=None, unit_ids=None):
     """
@@ -421,7 +426,7 @@ def get_rf(spike_times, xs, ys, rf_stim_table):
     
     return unit_rf
 
-# moved this to main compute_pref_variables.py
+# moved this functionality to main compute_pref_variables.py
 
 # def load_nwb_data(nwb_path):
 #     """

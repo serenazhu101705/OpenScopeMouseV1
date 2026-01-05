@@ -262,7 +262,7 @@ def plot_orientation_selectivity(peak_df,
                                  n_hist_bins=20,
                                  peak_dff_min=1.0,
                                  save_path=None,
-                                 density=False,
+                                 density=True,
                                  probe_name=None,
                                  mouse_name=None):
     """
@@ -323,7 +323,7 @@ def plot_direction_selectivity(peak_df,
                                n_hist_bins=20,
                                peak_dff_min=1.0,
                                save_path=None,
-                               density=False,
+                               density=True,
                                probe_name=None,
                                mouse_name=None):
     """
