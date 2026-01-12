@@ -741,8 +741,8 @@ def main():
                        fontsize=9)
                 
                 # Add threshold line
-                ax.axhline(y=0.25, color='red', linestyle='--', linewidth=1.5, 
-                          label='Threshold (0.25)', alpha=0.7)
+                ax.axhline(y=threshold, color='red', linestyle='--', linewidth=1.5, 
+                          label=f'Threshold ({threshold})', alpha=0.7)
                 
                 ax.set_ylabel('Peak Prominence', fontsize=11, fontweight='bold')
                 ax.set_title(f'{resp_type.upper()} Responses', fontsize=12, fontweight='bold')
@@ -780,11 +780,11 @@ def main():
                 ax.hist(data, bins=50, color=color, alpha=0.7, edgecolor='black')
                 
                 # Add threshold line
-                ax.axvline(x=0.25, color='red', linestyle='--', linewidth=2, 
-                          label='Threshold (0.25)', alpha=0.8)
+                ax.axvline(x=threshold, color='red', linestyle='--', linewidth=2, 
+                          label=f'Threshold ({threshold})', alpha=0.8)
                 
                 # Count cells above threshold
-                n_above = np.sum(np.array(data) >= 0.25)
+                n_above = np.sum(np.array(data) >= threshold)
                 n_total = len(data)
                 pct_above = (n_above / n_total) * 100
                 
