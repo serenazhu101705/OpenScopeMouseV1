@@ -234,6 +234,8 @@ def main():
                 X_valid = df.loc[valid_mask, ['rf_x_center', 'rf_y_center']].values
                 y = df.loc[valid_mask, variable].values
 
+
+
                 if variable == 'pref_sf':
                     y = y * 100
 
@@ -395,6 +397,40 @@ def main():
         # Prepare concatenated data
         X = all_data[variable][['rf_x', 'rf_y']].values
         y = all_data[variable]['variable'].values
+
+        unique_classes = np.unique(y)
+        n_classes = len(unique_classes)
+        if n_classes <= 10:
+            class_colors = plt.cm.tab10(np.linspace(0, 1, n_classes))
+        else:
+            class_colors = plt.cm.tab20(np.linspace(0, 1, n_classes))
+
+        x_positions = X[:, 0]
+        y_positions = X[:, 1]
+
+        # # Get RF extent from positions
+        # x_min, x_max = -40, 40
+        # y_min, y_max = -40, 40
+
+        # # Add padding
+        # x_padding = (x_max - x_min) * 0.1
+        # y_padding = (y_max - y_min) * 0.1
+
+        fig, ax = plt.subplots(figsize=(12, 10))
+        
+        for i, class_ in enumerate(unique_classes):
+            class_mask = (y == class_)
+            ax.scatter(x_positions[class_mask], y_positions[class_mask], color=class_colors[i], label=f'{class_}', s=100, alpha=0.6,  
+                       edgecolors='black', linewidths=1.0)
+        
+        ax.set_xlabel('RF Center X Position (degrees)', fontsize=14)
+        ax.set_ylabel('RF Center Y Position (degrees)', fontsize=14)
+
+        title = f'{variable} distribution.png'
+        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+
+        plt.tight_layout()
+        plt.savefig(output_dir / title, dpi=300, bbox_inches='tight')
         
         if variable == 'pref_sf':
             y = y * 100
