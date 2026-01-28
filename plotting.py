@@ -128,7 +128,8 @@ def plot_summary_figures(df, units_data, output_dir, probe_name=None):
             filtered_rfs,
             save_path=output_dir / 'rf_centers_by_preferred_orientation.png',
             probe_name=probe_name,
-            mouse_name=mouse_name
+            mouse_name=mouse_name,
+            background = False
         )
         
         # Plot RF centers colored by preferred temporal frequency
@@ -137,7 +138,8 @@ def plot_summary_figures(df, units_data, output_dir, probe_name=None):
             filtered_rfs,
             save_path=output_dir / 'rf_centers_by_preferred_tf.png',
             probe_name=probe_name,
-            mouse_name=mouse_name
+            mouse_name=mouse_name, 
+            background = False
         )
         
         # Plot RF centers colored by preferred spatial frequency
@@ -146,7 +148,8 @@ def plot_summary_figures(df, units_data, output_dir, probe_name=None):
             filtered_rfs,
             save_path=output_dir / 'rf_centers_by_preferred_sf.png',
             probe_name=probe_name,
-            mouse_name=mouse_name
+            mouse_name=mouse_name,
+            background = False 
         )
         
         # Plot RF position vs preferred orientation
@@ -565,7 +568,7 @@ def plot_preferred_sf_bar(peak_df,
 
 
 def plot_preferred_orientation_by_rf_from_csv(combined_df, filtered_rfs, save_path=None,
-                                              probe_name=None, mouse_name=None):
+                                              probe_name=None, mouse_name=None, background=True):
     """
     Plot RF centers colored by preferred orientation with average RF background.
     Uses CSV data with RF centers already computed.
@@ -611,17 +614,18 @@ def plot_preferred_orientation_by_rf_from_csv(combined_df, filtered_rfs, save_pa
         average_rf = np.mean(filtered_rfs, axis=0)
         
         # Get RF extent from positions
-        x_min, x_max = x_positions.min(), x_positions.max()
-        y_min, y_max = y_positions.min(), y_positions.max()
+        x_min, x_max = -40, 40
+        y_min, y_max = -40, 40
         
         # Add padding
-        x_padding = (x_max - x_min) * 0.1
-        y_padding = (y_max - y_min) * 0.1
+        x_padding = 0
+        y_padding = 0
         
-        im = ax.imshow(average_rf, origin="lower", cmap='viridis', alpha=0.4, 
-                       extent=[x_min - x_padding, x_max + x_padding, 
-                               y_min - y_padding, y_max + y_padding],
-                       aspect='auto')
+        if background:
+            im = ax.imshow(average_rf, origin="lower", cmap='viridis', alpha=0.4, 
+                        extent=[x_min - x_padding, x_max + x_padding, 
+                                y_min - y_padding, y_max + y_padding],
+                        aspect='auto')
     
     # Plot each orientation with different color
     for i, ori in enumerate(unique_oris):
@@ -657,7 +661,7 @@ def plot_preferred_orientation_by_rf_from_csv(combined_df, filtered_rfs, save_pa
 
 
 def plot_preferred_tf_by_rf_from_csv(combined_df, filtered_rfs, save_path=None,
-                                     probe_name=None, mouse_name=None):
+                                     probe_name=None, mouse_name=None, background=True):
     """
     Plot RF centers colored by preferred temporal frequency with average RF background.
     Uses CSV data with RF centers already computed.
@@ -703,17 +707,18 @@ def plot_preferred_tf_by_rf_from_csv(combined_df, filtered_rfs, save_path=None,
         average_rf = np.mean(filtered_rfs, axis=0)
         
         # Get RF extent from positions
-        x_min, x_max = x_positions.min(), x_positions.max()
-        y_min, y_max = y_positions.min(), y_positions.max()
+        x_min, x_max = -40, 40
+        y_min, y_max = -40, 40
         
         # Add padding
-        x_padding = (x_max - x_min) * 0.1
-        y_padding = (y_max - y_min) * 0.1
+        x_padding = 0
+        y_padding = 0
         
-        im = ax.imshow(average_rf, origin="lower", cmap='viridis', alpha=0.4, 
-                       extent=[x_min - x_padding, x_max + x_padding, 
-                               y_min - y_padding, y_max + y_padding],
-                       aspect='auto')
+        if background:
+            im = ax.imshow(average_rf, origin="lower", cmap='viridis', alpha=0.4, 
+                        extent=[x_min - x_padding, x_max + x_padding, 
+                                y_min - y_padding, y_max + y_padding],
+                        aspect='auto')
     
     # Plot each TF with different color
     for i, tf in enumerate(unique_tfs):
@@ -749,7 +754,7 @@ def plot_preferred_tf_by_rf_from_csv(combined_df, filtered_rfs, save_path=None,
 
 
 def plot_preferred_sf_by_rf_from_csv(combined_df, filtered_rfs, save_path=None,
-                                     probe_name=None, mouse_name=None):
+                                     probe_name=None, mouse_name=None, background=True):
     """
     Plot RF centers colored by preferred spatial frequency with average RF background.
     Uses CSV data with RF centers already computed.
@@ -795,17 +800,18 @@ def plot_preferred_sf_by_rf_from_csv(combined_df, filtered_rfs, save_path=None,
         average_rf = np.mean(filtered_rfs, axis=0)
         
         # Get RF extent from positions
-        x_min, x_max = x_positions.min(), x_positions.max()
-        y_min, y_max = y_positions.min(), y_positions.max()
+        x_min, x_max = -40, 40
+        y_min, y_max = -40, 40
         
         # Add padding
-        x_padding = (x_max - x_min) * 0.1
-        y_padding = (y_max - y_min) * 0.1
+        x_padding = 0
+        y_padding = 0
         
-        im = ax.imshow(average_rf, origin="lower", cmap='viridis', alpha=0.4, 
-                       extent=[x_min - x_padding, x_max + x_padding, 
-                               y_min - y_padding, y_max + y_padding],
-                       aspect='auto')
+        if background:
+            im = ax.imshow(average_rf, origin="lower", cmap='viridis', alpha=0.4, 
+                        extent=[x_min - x_padding, x_max + x_padding, 
+                                y_min - y_padding, y_max + y_padding],
+                        aspect='auto')
     
     # Plot each SF with different color
     for i, sf in enumerate(unique_sfs):
