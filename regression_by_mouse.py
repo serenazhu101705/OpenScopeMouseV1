@@ -39,12 +39,12 @@ def parse_arguments():
         help='Filtering method to apply (e.g., "peak_prominence")'
     )
 
-    parser.add_argument(
-        '--threshold',
-        type=float,
-        default=0.25,
-        help='Threshold value for filtering (e.g., 0.25)'
-    )
+    # parser.add_argument(
+    #     '--threshold',
+    #     type=float,
+    #     default=0.25,
+    #     help='Threshold value for filtering (e.g., 0.25)'
+    # )
 
     return parser.parse_args()
 
@@ -220,6 +220,12 @@ def main():
                         if variable in prominence_col_map:
                             prominence_col = prominence_col_map[variable]
                             if prominence_col in df.columns:
+                                if variable == 'pref_ori':
+                                    threshold = 0.25
+                                elif variable == 'pref_tf':
+                                    threshold = 0.05    
+                                elif variable == 'pref_sf':
+                                    threshold = 0.2
                                 valid_mask = valid_mask & (df[prominence_col] >= threshold)
                     
                     temp_df = pd.DataFrame({
@@ -233,8 +239,6 @@ def main():
                 # Get data for regression
                 X_valid = df.loc[valid_mask, ['rf_x_center', 'rf_y_center']].values
                 y = df.loc[valid_mask, variable].values
-
-
 
                 if variable == 'pref_sf':
                     y = y * 100
