@@ -426,7 +426,7 @@ def main():
                     units_data = process_units(
                         nwb_data=nwb_data,
                         probe=probe,
-                        all_units=args.all_units,
+                        all_units=not args.filtered,
                         verbose=args.verbose
                     )
                     
