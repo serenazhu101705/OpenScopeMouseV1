@@ -3,3 +3,5 @@ jupyternotebooks/peak_prominence.ipynb
 ignore/
 *.env
 jupyternotebooks/new_analysis.ipynb
+__pycache__/
+*.pyc
