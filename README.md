@@ -50,3 +50,26 @@ https://docs.google.com/document/d/1y0XpHaprXy6NmaaKtz32JZzTjowQHkf--x5kDP9GC0Q/
 8. data_processing.py → calculate_all_metrics()
     - For each unit units_data[‘unit_indices’] calls calculate_preferred_metrics() from data_processing.py
 9. data_processing.py → calculate_preferred_metrics()
+
+### Regression By Mouse
+
+1. Naviage to `regression_by_mouse.py` and run:   
+
+    ```
+    python regression_by_mouse.py --data_dir "X:\Personnel\MaryBeth\OpenScope\001568\results\results_all-probes_filtered-r2-0.50_20260108_144341"
+    ```
+    - Or with optional flags: 
+
+        ```
+        python regression_by_mouse.py --data_dir "X:\Personnel\MaryBeth\OpenScope\001568\results\results_all-probes_filtered-r2-0.50_20260108_144341" --filtering peak_prominence
+        ```
+
+#### Purpose:
+- Creates output folder in regression/ 
+- Loops through subdirectories that start with ‘sub-’ 
+    - Loops through probe subdirectories 
+    - Applies peak prominence calculation if argument was passed with flag   
+    `--filtering`
+    - Loops through discrete variables
+        - Filters by variable peak prominence > 0.25 and where `rf_x_center` and `rf_y_center` $\not=$ `na`
+        - Adds data to all_data
